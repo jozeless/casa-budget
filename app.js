@@ -16,18 +16,31 @@ const authRedirect = 'https://jozeless.github.io/casa-budget/';
 const linkParams = new URLSearchParams(location.hash.slice(1));
 const linkQuery = new URLSearchParams(location.search);
 const linkError = linkParams.has('error') || linkParams.has('error_code') || linkQuery.has('error') || linkQuery.has('error_code');
-const recovery = {active:linkParams.get('type')==='recovery' || linkQuery.get('type')==='recovery' || linkError, valid:false};
+const recoveryLink = linkParams.get('type')==='recovery' || linkQuery.get('type')==='recovery';
+const recovery = {active:recoveryLink || linkError, status:'pending', userId:null, busy:false, cancelled:false};
 let authSubscription;
+let authGeneration=0;
 const recoveryMessage = message => { $('recovery-message').textContent=message; };
 function showRecovery(){
   view('recovery');
-  $('save-password').disabled=!recovery.valid;
+  $('save-password').disabled=recovery.status!=='valid' || recovery.busy;
 }
 function invalidRecovery(){
-  recovery.active=true; recovery.valid=false;
+  recovery.active=true; recovery.status='invalid'; recovery.userId=null;
   $('recovery-form').reset();
   recoveryMessage('El enlace ha caducado o no es válido. Solicita un nuevo correo de recuperación.');
   showRecovery();
+}
+function validRecovery(session){
+  if(recovery.status==='invalid' || recovery.cancelled)return;
+  if(!session?.user?.id || !session.access_token){invalidRecovery();return;}
+  recovery.active=true; recovery.status='valid'; recovery.userId=session.user.id;
+  if(!recovery.busy)recoveryMessage('Introduce y confirma tu nueva contraseña.');
+  showRecovery();
+}
+function confirmedAuthError(error){
+  return error?.status===401 || error?.status===403 || error?.name==='AuthImplicitGrantRedirectError' ||
+    ['session_not_found','session_expired','refresh_token_not_found','refresh_token_already_used','otp_expired','bad_jwt','invalid_token'].includes(error?.code);
 }
 function passwordError(error, changingPassword=false){
   if(error?.status===429 || error?.code==='over_email_send_rate_limit' || error?.code==='over_request_rate_limit') return 'Demasiados intentos. Espera unos minutos y vuelve a intentarlo.';
@@ -37,32 +50,58 @@ function passwordError(error, changingPassword=false){
 async function start(){
   const {url,key}=clientConfig();
   if(!url||!key){view('setup');return;}
+  const generation=++authGeneration;
   try {
     authSubscription?.unsubscribe();
+    if(recovery.active){
+      if(linkError)invalidRecovery();
+      else {
+        recovery.status='pending';recovery.userId=null;
+        recoveryMessage('Verificando enlace…');showRecovery();
+      }
+    }
     store.client=window.supabase.createClient(url,key);$('connection-state').textContent='Conectado';
     authSubscription=store.client.auth.onAuthStateChange((event,session)=>{
+      if(generation!==authGeneration)return;
       const newId=session?.user?.id||null;
       const changed=newId!==(store.user?.id||null);
       store.user=session?.user||null;
       if(changed)store.household=null;
       if(event==='PASSWORD_RECOVERY'){
-        recovery.active=true;recovery.valid=!!session;
-        recoveryMessage(session?'Introduce y confirma tu nueva contraseña.':'El enlace no es válido. Solicita otro correo.');
-        showRecovery();return;
+        validRecovery(session);return;
       }
       if(recovery.active){
-        if(event==='SIGNED_OUT')invalidRecovery();
+        // INITIAL_SESSION and SIGNED_IN alone do not prove recovery.
+        if(event==='SIGNED_OUT' || (recovery.status==='valid' && newId && newId!==recovery.userId))invalidRecovery();
         return;
       }
       if(changed)setTimeout(()=>route().catch(fail),0);
     }).data.subscription;
+    // Initialization can finish before its deferred PASSWORD_RECOVERY notification.
+    const {error:initError}=await store.client.auth.initialize();
+    if(generation!==authGeneration)return;
+    if(initError)throw initError;
     const {data:{session},error}=await store.client.auth.getSession();
+    if(generation!==authGeneration)return;
     if(error)throw error;
     store.user=session?.user||null;
-    if(linkError || (recovery.active&&!recovery.valid)){invalidRecovery();return;}
+    if(recovery.active){
+      if(recovery.status==='invalid'){showRecovery();return;}
+      if(!session){invalidRecovery();return;}
+      // Only accept a session from this URL, never an unrelated stored session.
+      if(recoveryLink && linkParams.get('access_token') && linkParams.get('refresh_token') &&
+        session.access_token===linkParams.get('access_token'))validRecovery(session);
+      if(recovery.status==='valid' && session.user?.id!==recovery.userId)invalidRecovery();
+      else if(recovery.status==='pending' && recoveryLink && !linkParams.get('access_token') && !linkQuery.get('code'))invalidRecovery();
+      showRecovery();return;
+    }
     await route();
   }catch(e){
-    if(recovery.active){recoveryMessage(passwordError(e));showRecovery();}
+    if(generation!==authGeneration)return;
+    if(recovery.active){
+      if(confirmedAuthError(e))invalidRecovery();
+      else {recovery.status='pending';recovery.userId=null;recoveryMessage(passwordError(e));showRecovery();}
+    }
     else {fail(e);view('setup');}
   }
 }
@@ -130,28 +169,28 @@ $('forgot-password-btn').onclick=async()=>{
 };
 $('recovery-form').onsubmit=async event=>{
   event.preventDefault();
-  if(!recovery.valid){invalidRecovery();return;}
+  if(recovery.status!=='valid'){showRecovery();return;}
   const password=$('new-password').value;
   if(password!==$('confirm-password').value){recoveryMessage('Las contraseñas no coinciden.');return;}
-  const button=$('save-password');button.disabled=true;
+  const button=$('save-password');recovery.busy=true;button.disabled=true;
   recoveryMessage('Guardando contraseña…');
   try{
     const {data:{session},error:sessionError}=await store.client.auth.getSession();
     if(sessionError)throw sessionError;
-    if(!session){invalidRecovery();return;}
+    if(recovery.status!=='valid' || !session?.access_token || session.user?.id!==recovery.userId){invalidRecovery();return;}
     const {error}=await store.client.auth.updateUser({password});
     if(error)throw error;
-    $('recovery-form').reset();recovery.active=false;recovery.valid=false;
+    $('recovery-form').reset();recovery.active=false;recovery.status='pending';recovery.userId=null;recovery.cancelled=true;
     history.replaceState(null,'',location.pathname+location.search);
     notice('Contraseña actualizada ✔');
     await route();
   }catch(error){
-    if(error?.status===401 || error?.status===403 || ['session_not_found','session_expired','refresh_token_not_found','refresh_token_already_used','otp_expired'].includes(error?.code))invalidRecovery();
+    if(confirmedAuthError(error))invalidRecovery();
     else recoveryMessage(passwordError(error,true));
-  }finally{button.disabled=!recovery.valid;}
+  }finally{recovery.busy=false;button.disabled=recovery.status!=='valid';}
 };
 $('recovery-retry-btn').onclick=()=>{
-  recovery.active=false;recovery.valid=false;
+  recovery.active=false;recovery.status='pending';recovery.userId=null;recovery.cancelled=true;
   $('recovery-form').reset();$('auth-password').value='';
   history.replaceState(null,'',location.pathname);
   $('auth-message').textContent='Introduce tu email y pulsa «Olvidé mi contraseña» para solicitar otro enlace.';
