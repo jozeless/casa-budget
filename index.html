@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#111d19" />
+  <meta name="description" content="Presupuesto compartido y compras del hogar" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Casa · Compras</title>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar"><div class="brand"><div class="brand-icon">⌂</div><div><b>CASA</b><span>Compras compartidas</span></div></div><span class="pill" id="connection-state">Sin conectar</span></header>
+    <section id="setup-view" class="panel hidden"><h1>Conectar Supabase</h1><p class="muted">Introduce la URL del proyecto y su clave pública <code>anon</code> o <code>publishable</code>. Nunca pongas aquí una clave <code>service_role</code> ni claves de OpenAI.</p><form id="setup-form" class="stack"><label>URL de Supabase<input id="supabase-url" type="url" required placeholder="https://xxxxx.supabase.co" /></label><label>Clave pública<input id="supabase-key" type="text" required placeholder="sb_publishable_... o eyJ..." /></label><button type="submit" class="primary">Conectar</button></form><p class="hint">También puedes dejar la configuración fija en <code>config.js</code> para publicar la app.</p></section>
+    <section id="auth-view" class="panel hidden"><div class="eyebrow">BIENVENIDOS</div><h1>Las compras de casa,<br/>bajo control.</h1><p class="muted">Inicia sesión o crea una cuenta con email y contraseña.</p><form id="auth-form" class="stack"><label>Email<input type="email" id="auth-email" required autocomplete="email" /></label><label>Contraseña<input type="password" id="auth-password" required minlength="6" autocomplete="current-password" /></label><button id="signin-btn" class="primary" type="submit">Entrar</button><button id="signup-btn" class="secondary" type="button">Crear cuenta</button></form><p class="hint">Si está activada la confirmación de email, revisa tu correo después de registrarte.</p></section>
+    <section id="home-setup-view" class="panel hidden"><div class="eyebrow">PRIMER PASO</div><h1>Un hogar, dos cuentas.</h1><p class="muted">Una persona crea el hogar; la otra entra con el código privado que se genera.</p><div class="two-col"><form id="create-home-form" class="stack subpanel"><h2>Crear hogar</h2><label>Nombre<input id="home-name" required maxlength="60" value="Nuestra casa" /></label><label>Presupuesto mensual (€)<input id="initial-budget" type="number" min="0" step="0.01" required value="600" /></label><button class="primary" type="submit">Crear hogar</button></form><form id="join-home-form" class="stack subpanel"><h2>Unirme al hogar</h2><label>Código de invitación<input id="join-code" required placeholder="Pega el código privado" /></label><button class="secondary" type="submit">Unirme</button></form></div></section>
+    <section id="dashboard-view" class="hidden">
+      <div class="page-head"><div><div class="eyebrow">PRESUPUESTO DEL HOGAR</div><h1 id="period-heading">Este mes</h1></div><button class="ghost small" id="logout-btn" title="Cerrar sesión">Salir ↗</button></div>
+      <div class="summary"><div class="summary-top"><span>Disponible</span><span id="home-display" class="soft-pill"></span></div><div id="remaining" class="hero-amount">€0,00</div><div class="summary-bottom"><span>Gastado <strong id="spent">€0,00</strong></span><span>Presupuesto <strong id="budget">€0,00</strong></span></div><div class="progress"><div id="progress-bar"></div></div><div id="budget-warning" class="warning hidden">Has superado el presupuesto del mes.</div></div>
+      <div class="actions"><button id="new-purchase-btn" class="primary">＋ Añadir compra</button><button id="new-budget-btn" class="secondary">⚙ Presupuesto</button></div>
+      <div class="month-control"><button id="prev-month" class="ghost" aria-label="Mes anterior">←</button><strong id="month-name"></strong><button id="next-month" class="ghost" aria-label="Mes siguiente">→</button></div>
+      <div class="section-head"><h2>Compras</h2><span id="purchase-count" class="muted"></span></div><div id="purchases-list" class="purchase-list"></div>
+      <div class="section-head"><h2>¿Dónde se fue el dinero?</h2></div><div id="store-report" class="report panel"></div>
+      <div class="section-head"><h2>Productos más comprados</h2></div><div id="product-report" class="report panel"></div>
+      <div class="assistant-note"><span>✦</span><div><b>Próxima fase: recibos con IA</b><p>La conexión con GPT todavía no está activada. Por ahora puedes registrar cada producto manualmente, sin coste de IA.</p></div></div>
+      <details class="settings"><summary>Compartir hogar y configuración</summary><div class="panel"><p class="muted">Comparte este código de forma privada con la segunda persona. Quien lo tenga y tenga una cuenta podrá entrar al hogar.</p><div class="code-row"><code id="invite-code"></code><button id="copy-invite" class="secondary small">Copiar</button></div><p id="user-email" class="hint"></p></div></details>
+    </section>
+  </main>
+  <dialog id="purchase-dialog" class="modal"><form id="purchase-form" class="stack"><div class="modal-head"><div><div class="eyebrow">NUEVA ENTRADA</div><h2>Registrar compra</h2></div><button type="button" class="icon-btn" data-close="purchase-dialog" aria-label="Cerrar">✕</button></div><label>Supermercado<input id="purchase-store" required maxlength="80" list="store-options" placeholder="Jumbo" /><datalist id="store-options"><option>Jumbo</option><option>Albert Heijn</option><option>Lidl</option><option>Aldi</option><option>Plus</option><option>Dirk</option><option>Action</option></datalist></label><label>Fecha<input id="purchase-date" type="date" required /></label><label>Importe total (€)<input id="purchase-total" type="number" min="0.01" step="0.01" required placeholder="3.00" /></label><div class="item-head"><b>Productos <small>(opcional)</small></b><button type="button" class="text-button" id="add-item-btn">+ Producto</button></div><div id="items-container" class="stack compact"></div><p class="hint">Para analizar productos después, añade su nombre y precio. Si completas productos, su suma debe coincidir con el total de la compra.</p><button type="submit" class="primary" id="save-purchase">Guardar compra</button></form></dialog>
+  <dialog id="budget-dialog" class="modal"><form id="budget-form" class="stack"><div class="modal-head"><h2>Presupuesto mensual</h2><button type="button" class="icon-btn" data-close="budget-dialog" aria-label="Cerrar">✕</button></div><p class="muted">Este presupuesto fijo se aplica a todos los meses; modificarlo también cambia las comparaciones de meses anteriores.</p><label>Euros por mes<input id="budget-input" type="number" min="0" step="0.01" required /></label><button type="submit" class="primary">Actualizar</button></form></dialog>
+  <dialog id="detail-dialog" class="modal"><div class="modal-head"><h2 id="detail-title">Compra</h2><button type="button" class="icon-btn" data-close="detail-dialog" aria-label="Cerrar">✕</button></div><p id="detail-subtitle" class="muted"></p><div id="detail-items" class="detail-items"></div><div class="detail-bottom"><b id="detail-total"></b><button id="delete-purchase" class="danger">Eliminar compra</button></div></dialog>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
