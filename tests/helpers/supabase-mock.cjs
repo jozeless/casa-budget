@@ -19,6 +19,8 @@ module.exports=function installMock(seed){
     then(resolve,reject){return this.execute().then(resolve,reject);}
     async execute(){
       calls.push({table:this.table,operation:this.operation,from:this.from,to:this.to});
+      if(seed.failHousehold&&this.operation==='read'&&this.table==='households')return {data:null,error:{message:'Simulated household failure'}};
+      if(seed.failWrite&&this.operation!=='read')return {data:null,error:{message:'Simulated write failure'}};
       if(seed.failRead&&this.operation==='read'&&this.table==='purchases')return {data:null,error:{message:'Simulated network failure'}};
       if(seed.delay)await new Promise(resolve=>setTimeout(resolve,seed.delay));
       let rows=this.table==='household_members'?(seed.noHousehold?[]:[{user_id:'test-user',household_id:'test-home'}]):this.table==='households'?[data.household]:data[this.table==='purchase_items'?'items':this.table];
@@ -35,7 +37,7 @@ module.exports=function installMock(seed){
       rows=rows.filter(row=>this.filters.every(filter=>filter(row))).slice();
       rows.sort((a,b)=>{for(const [key,ascending] of this.orders){const result=String(a[key]??'').localeCompare(String(b[key]??''));if(result)return ascending?result:-result;}return 0;});
       if(this.from!==undefined)rows=rows.slice(this.from,this.to+1);
-      return {data:this.one?(rows[0]||null):rows,error:null};
+      return {data:JSON.parse(JSON.stringify(this.one?(rows[0]||null):rows)),error:null};
     }
   }
   window.mock={data,calls,seed,emit(event,next=session){session=next;callback(event,next);}};

@@ -9,13 +9,27 @@ const store = {client:null,user:null,household:null,purchases:[],items:[],select
 const analytics=window.CASA_BUDGET;
 let loadTask=null;
 let routeTask=null;
+let renderedDate=null;
+let calendarTimer;
+function checkCalendar(){
+  if(store.loaded&&store.household&&!recovery.active&&renderedDate!==dateLocal()){
+    updateFilters();render();
+  }
+}
+function scheduleCalendar(){
+  if(!window.setTimeout)return;
+  window.clearTimeout(calendarTimer);
+  const now=new Date(),midnight=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+  calendarTimer=window.setTimeout(()=>{checkCalendar();scheduleCalendar();},midnight-now+50);
+}
+function resumeCalendar(){checkCalendar();scheduleCalendar();}
 function resetDashboard(){
   for(const id of ['remaining','spent','budget','weekly-amount'])$(id).textContent='—';
   for(const id of ['recent-purchases','purchases-list','store-report','product-report','monthly-report'])$(id).innerHTML='';
   $('purchase-count').textContent='';$('weekly-period').textContent='';$('progress-bar').style.width='0%';
   $('budget-warning').classList.add('hidden');
   for(const id of ['history-month','history-store','history-search','data-month']){
-    $(id).value='';if($(id).dataset)delete $(id).dataset.initialized;
+    $(id).value='';if($(id).dataset){delete $(id).dataset.initialized;delete $(id).dataset.manual;delete $(id).dataset.currentMonth;}
   }
   store.page='home';store.historyLimit=50;
   for(const id of ['purchase-dialog','detail-dialog','budget-dialog','add-menu-dialog'])if($(id).open)$(id).close();
@@ -197,6 +211,7 @@ async function paged(query){
 }
 async function refresh(force=false){
   if(!store.household)return;
+  const hadSnapshot=store.loaded;
   if(force){store.dataVersion++;store.loaded=false;}
   if(loadTask){
     try{await loadTask;}catch(error){if(!force)throw error;}
@@ -207,6 +222,13 @@ async function refresh(force=false){
   $('data-status').textContent='Cargando compras…';$('refresh-data-btn').disabled=true;
   const promise=(async()=>{
     try{
+      let household=store.household;
+      if(force){
+        const result=await store.client.from('households').select('id,name,monthly_budget,invite_code').eq('id',householdId).single();
+        if(result.error)throw result.error;
+        if(!result.data)throw Error('No se pudo consultar el presupuesto del hogar.');
+        household=result.data;
+      }
       const purchases=await paged(()=>store.client.from('purchases').select('id,store,purchased_on,total,created_at').eq('household_id',householdId).order('purchased_on',{ascending:false}).order('created_at',{ascending:false}).order('id',{ascending:false}));
       const items=[];
       for(let index=0;index<purchases.length;index+=100){
@@ -214,10 +236,14 @@ async function refresh(force=false){
         items.push(...await paged(()=>store.client.from('purchase_items').select('id,purchase_id,name,quantity,line_total').in('purchase_id',ids).order('id',{ascending:true})));
       }
       if(store.household?.id!==householdId||store.dataVersion!==version)return;
-      store.purchases=purchases;store.items=items;store.loaded=true;
+      store.household=household;store.purchases=purchases;store.items=items;store.loaded=true;
+      $('home-display').textContent=household.name;$('invite-code').textContent=household.invite_code;
       updateFilters();render();$('data-status').textContent='Compras actualizadas';
     }catch(error){
-      if(store.household?.id===householdId&&store.dataVersion===version)$('data-status').textContent='No se pudieron actualizar las compras. Pulsa Actualizar para reintentar.';
+      if(store.household?.id===householdId&&store.dataVersion===version){
+        store.loaded=hadSnapshot;
+        $('data-status').textContent='No se pudieron actualizar los datos. '+(hadSnapshot?'La información visible puede estar desactualizada. ':'')+'Pulsa Actualizar para reintentar.';
+      }
       throw error;
     }finally{$('refresh-data-btn').disabled=false;}
   })();
@@ -226,6 +252,7 @@ async function refresh(force=false){
 }
 function navigate(page, resetScroll=true){
   if(!['home','history','data'].includes(page))return;
+  if(resetScroll)checkCalendar();
   store.page=page;
   for(const name of ['home','history','data'])$(name+'-page').classList.toggle('hidden',name!==page);
   document.querySelectorAll('[data-page]').forEach(button=>{
@@ -239,9 +266,11 @@ function updateFilters(){
   const months=[...new Set([current,...store.purchases.map(p=>p.purchased_on.slice(0,7)),...analytics.evolution([],new Date()).map(m=>m.month)])].sort().reverse();
   for(const id of ['history-month','data-month']){
     const previous=$(id).value;
+    const followCurrent=$(id).dataset.manual!=='true'&&previous===$(id).dataset.currentMonth;
+    if(previous&&!months.includes(previous))months.push(previous);
     $(id).innerHTML=(id==='history-month'?'<option value="">Todos los meses</option>':'')+months.map(month=>`<option value="${month}">${monthLabel(month)}</option>`).join('');
-    $(id).value=previous!==''&&months.includes(previous)?previous:($(id).dataset.initialized==='true'&&id==='history-month'?'':current);
-    $(id).dataset.initialized='true';
+    $(id).value=followCurrent?current:previous!==''&&months.includes(previous)?previous:($(id).dataset.initialized==='true'&&id==='history-month'?'':current);
+    $(id).dataset.initialized='true';$(id).dataset.currentMonth=current;
   }
   const supermarket=$('history-store').value;
   const supermarkets=[...new Set(store.purchases.map(p=>p.store))].sort((a,b)=>a.localeCompare(b,'es'));
@@ -254,6 +283,7 @@ function purchaseCards(purchases){
 }
 function render(){
   if(!store.loaded||!store.household)return;
+  renderedDate=dateLocal();
   const today=new Date(),current=monthKey(today),purchases=analytics.inMonth(store.purchases,current);
   const spent=analytics.total(purchases),budget=analytics.cents(store.household.monthly_budget),remaining=budget-spent;
   $('period-heading').textContent=monthLabel(current);
@@ -294,15 +324,30 @@ function report(id,list,empty){
 }
 function addItem(name='',qty='1',total=''){const row=document.createElement('div');row.className='item-row';row.innerHTML=`<input class="item-name" aria-label="Producto" maxlength="120" required placeholder="Producto" value="${safe(name)}"><input class="item-qty" aria-label="Cantidad" type="number" min="0.01" step="0.01" required value="${safe(qty)}"><input class="item-total" aria-label="Subtotal del producto" type="number" min="0" step="0.01" required placeholder="€ total" value="${safe(total)}"><button type="button" class="remove-item" aria-label="Quitar producto">×</button>`;row.querySelector('button').onclick=()=>row.remove();$('items-container').appendChild(row);}
 function dialog(id){$(id).showModal();}
-async function savePurchase(ev){ev.preventDefault();const btn=$('save-purchase');btn.disabled=true;
+async function reloadAfterWrite(message){
+  const householdId=store.household?.id,userId=store.user?.id;
+  try{await refresh(true);notice(message);}
+  catch{
+    if(store.household?.id!==householdId||store.user?.id!==userId)return;
+    $('data-status').textContent=message+'. No se pudieron actualizar los datos del hogar; la información visible puede estar desactualizada. Pulsa Actualizar.';
+    notice(message+'. Actualización pendiente; no repitas la operación.');
+  }
+}
+async function savePurchase(ev){ev.preventDefault();const btn=$('save-purchase');if(btn.disabled)return;btn.disabled=true;
+  const householdId=store.household?.id,userId=store.user?.id;
   try{const total=Number($('purchase-total').value),storeName=$('purchase-store').value.trim(),date=$('purchase-date').value;
     if(!storeName||!date||!Number.isFinite(total)||total<=0)throw Error('Completa supermercado, fecha e importe positivo.');
     const items=[...document.querySelectorAll('#items-container .item-row')].map(row=>({name:row.querySelector('.item-name').value.trim(),quantity:Number(row.querySelector('.item-qty').value),line_total:Number(row.querySelector('.item-total').value)}));
     if(items.some(i=>!i.name||i.name.length>120||!Number.isFinite(i.quantity)||i.quantity<=0||!Number.isFinite(i.line_total)||i.line_total<0))throw Error('Revisa los productos y sus precios.');
     if(items.length && Math.round(items.reduce((n,i)=>n+i.line_total,0)*100)!==Math.round(total*100))throw Error('La suma de productos debe coincidir con el total del recibo.');
-    const r=await store.client.from('purchases').insert({household_id:store.household.id,created_by:store.user.id,store:storeName,purchased_on:date,total}).select('id').single();if(r.error)throw r.error;
+    const r=await store.client.from('purchases').insert({household_id:store.household.id,created_by:store.user.id,store:storeName,purchased_on:date,total}).select('id,created_at').single();if(r.error)throw r.error;
     if(items.length){const ir=await store.client.from('purchase_items').insert(items.map(i=>({...i,purchase_id:r.data.id})));if(ir.error){await store.client.from('purchases').delete().eq('id',r.data.id);throw Error('No se pudieron guardar los productos. Revisa y repite la compra.');}}
-    $('purchase-dialog').close();$('purchase-form').reset();$('items-container').innerHTML='';await refresh(true);notice('Compra guardada ✔');
+    if(store.household?.id!==householdId||store.user?.id!==userId)return;
+    store.purchases.unshift({id:r.data.id,store:storeName,purchased_on:date,total,created_at:r.data.created_at});
+    store.purchases.sort((a,b)=>b.purchased_on.localeCompare(a.purchased_on)||b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id));
+    store.items.push(...items.map(i=>({...i,purchase_id:r.data.id})));
+    updateFilters();render();
+    $('purchase-dialog').close();$('purchase-form').reset();$('items-container').innerHTML='';await reloadAfterWrite('Compra guardada ✔');
   }catch(e){fail(e);}finally{btn.disabled=false;}
 }
 function purchaseDetail(id){const p=store.purchases.find(x=>x.id===id);if(!p)return;store.selected=p;
@@ -380,9 +425,9 @@ document.querySelectorAll('[data-page]').forEach(button=>button.onclick=()=>navi
 $('see-history-btn').onclick=()=>navigate('history');
 $('add-menu-btn').onclick=()=>dialog('add-menu-dialog');
 $('refresh-data-btn').onclick=()=>refresh(true).catch(fail);
-for(const id of ['history-month','history-store'])$(id).onchange=()=>{store.historyLimit=50;renderHistory();};
+for(const id of ['history-month','history-store'])$(id).onchange=()=>{if(id==='history-month')$(id).dataset.manual='true';store.historyLimit=50;renderHistory();};
 $('history-search').oninput=()=>{store.historyLimit=50;renderHistory();};
-$('data-month').onchange=renderData;
+$('data-month').onchange=()=>{$('data-month').dataset.manual='true';renderData();};
 $('history-more-btn').onclick=()=>{store.historyLimit+=50;renderHistory();};
 $('new-purchase-btn').onclick=()=>{$('add-menu-dialog').close();$('purchase-form').reset();$('purchase-date').value=dateLocal();$('items-container').innerHTML='';dialog('purchase-dialog');};
 $('new-budget-btn').onclick=()=>{$('budget-input').value=store.household.monthly_budget;dialog('budget-dialog');};
@@ -390,9 +435,25 @@ $('add-item-btn').onclick=()=>addItem();
 $('purchase-form').onsubmit=savePurchase;
 $('budget-form').onsubmit=async e=>{e.preventDefault();try{const amount=Number($('budget-input').value);if(!Number.isFinite(amount)||amount<0)throw Error('Presupuesto inválido');const r=await store.client.from('households').update({monthly_budget:amount}).eq('id',store.household.id).select('monthly_budget').single();if(r.error)throw r.error;store.household.monthly_budget=r.data.monthly_budget;$('budget-dialog').close();render();notice('Presupuesto actualizado');}catch(err){fail(err);}};
 for(const id of ['purchases-list','recent-purchases'])$(id).onclick=e=>{const card=e.target.closest('[data-purchase]');if(card)purchaseDetail(card.dataset.purchase);};
-$('delete-purchase').onclick=async()=>{if(!store.selected||!confirm(`¿Eliminar la compra de ${store.selected.store}?`))return;try{const r=await store.client.from('purchases').delete().eq('id',store.selected.id);if(r.error)throw r.error;$('detail-dialog').close();await refresh(true);notice('Compra eliminada');}catch(e){fail(e);}};
+$('delete-purchase').onclick=async()=>{
+  const button=$('delete-purchase'),purchase=store.selected;
+  if(button.disabled||!purchase||!confirm(`¿Eliminar la compra de ${purchase.store}?`))return;
+  button.disabled=true;
+  const householdId=store.household?.id,userId=store.user?.id;
+  try{
+    const r=await store.client.from('purchases').delete().eq('id',purchase.id);if(r.error)throw r.error;
+    if(store.household?.id!==householdId||store.user?.id!==userId)return;
+    store.purchases=store.purchases.filter(p=>p.id!==purchase.id);
+    store.items=store.items.filter(i=>i.purchase_id!==purchase.id);store.selected=null;
+    updateFilters();render();$('detail-dialog').close();await reloadAfterWrite('Compra eliminada');
+  }catch(e){fail(e);}finally{button.disabled=false;}
+};
 $('copy-invite').onclick=async()=>{try{await navigator.clipboard.writeText(store.household.invite_code);notice('Código copiado');}catch(e){notice('Selecciona el código y cópialo manualmente.');}};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
 if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(console.warn);
+document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)resumeCalendar();});
+window.addEventListener?.('pageshow',resumeCalendar);
+window.addEventListener?.('focus',resumeCalendar);
+scheduleCalendar();
 start().catch(fail);
 })();

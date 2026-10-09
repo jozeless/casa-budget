@@ -23,12 +23,12 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
  const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
  let cases=0;
  try{
- async function open(width,height,seed){
+ async function open(width,height,seed,clock){
    const context=await browser.newContext({viewport:{width,height}});let remote=0;const errors=[];
    await context.addInitScript(installMock,seed);
    await context.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'text/javascript',body:'/* Auth supplied by test fixture */'}));
    await context.route('https://*.supabase.co/**',route=>{remote++;return route.abort();});
-   const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
+   const page=await context.newPage();if(clock)await page.clock.install({time:clock});page.on('pageerror',error=>errors.push(error.message));page.on('dialog',dialog=>dialog.accept());
    await page.goto(address);
    if(seed.noHousehold)await page.locator('#home-setup-view').waitFor({state:'visible'});
    else if(seed.failRead)await page.waitForFunction(()=>document.getElementById('data-status').textContent.includes('No se pudieron'));
@@ -81,7 +81,7 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
  await page.locator('#new-budget-btn').click();await page.locator('#budget-input').fill('150');await page.locator('#budget-form button[type=submit]').click();await page.locator('#budget-dialog').waitFor({state:'hidden'});assert.match(await page.locator('#remaining').textContent(),/130/);
  // Installed shell includes the new helper and survives a network failure.
  await page.evaluate(()=>navigator.serviceWorker.ready);await page.reload();await page.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');
- assert(await page.evaluate(async()=>{const cache=await caches.open('casa-shell-v3-framework');return !!(await cache.match('./budget.js'));}));
+ assert(await page.evaluate(async()=>{const cache=await caches.open('casa-shell-v4-framework-sync');return !!(await cache.match('./budget.js'));}));
  await ui.context.setOffline(true);assert.match(await page.evaluate(async()=>await (await fetch('./budget.js')).text()),/Pure calendar/);await ui.context.setOffline(false);
  await page.locator('#logout-btn').click();await page.locator('#auth-view').waitFor({state:'visible'});assert(!await page.locator('#app-nav').isVisible());assert(!await page.locator('#add-menu-btn').isVisible());
  await page.locator('#auth-email').fill('test@example.com');await page.locator('#auth-password').fill('synthetic-password');
@@ -96,6 +96,31 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
    await setup.page.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');assert(await setup.page.locator('#app-nav').isVisible());assert.equal(setup.remote,0);assert.deepEqual(setup.errors,[]);await setup.context.close();
  }
  const failed=await open(320,568,{failRead:true,purchases:[],items:[]});assert.equal(await failed.page.locator('#spent').textContent(),'—');await failed.page.evaluate(()=>mock.seed.failRead=false);await failed.page.locator('#refresh-data-btn').click();await failed.page.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');assert.equal(failed.remote,0);assert.deepEqual(failed.errors,[]);await failed.context.close();
- console.log(cases+' responsive scenarios passed; filters, real-value reports, safe navigation, shared reads, simulated insert/delete/budget/login/logout, and PWA cache passed. No live Supabase calls.');
+ // Calendar rollover and post-write read failures in real browser DOM, fixtures only.
+ for(const width of [320,1280]){
+   const calendar=await open(width,844,{budget:100,purchases:[purchase('oct','2026-10-01',20),purchase('nov','2026-11-01',30)]},new Date(2026,9,31,23,59,59));
+   await calendar.page.locator('[data-page=data]').click();
+   await calendar.page.locator('#data-month').selectOption('2026-10');
+   await calendar.page.clock.runFor(2000);
+   assert.match(await calendar.page.locator('#period-heading').textContent(),/noviembre/);
+   assert.match(await calendar.page.locator('#remaining').textContent(),/70/);
+   assert.equal(await calendar.page.locator('#history-month').inputValue(),'2026-11');
+   assert.equal(await calendar.page.locator('#data-month').inputValue(),'2026-10');
+   await calendar.page.evaluate(()=>mock.data.household.monthly_budget=200);
+   await calendar.page.locator('#refresh-data-btn').click();
+   await calendar.page.waitForFunction(()=>document.getElementById('remaining').textContent.includes('170'));
+   assert.equal(calendar.remote,0);assert.deepEqual(calendar.errors,[]);await calendar.context.close();
+   const stale=await open(width,844,normal),p=stale.page;
+   await p.locator('#add-menu-btn').click();await p.locator('#new-purchase-btn').click();await p.locator('#purchase-store').fill('Aldi');await p.locator('#purchase-total').fill('10');
+   await p.evaluate(()=>mock.seed.failRead=true);await p.locator('#save-purchase').click();await p.locator('#purchase-dialog').waitFor({state:'hidden'});
+   await p.waitForFunction(()=>document.getElementById('data-status').textContent.includes('Compra guardada'));
+   assert.match(await p.locator('#spent').textContent(),/30/);assert.match(await p.locator('#toast').textContent(),/no repitas/);
+   await p.locator('[data-page=history]').click();await p.locator('#history-search').fill('Aldi');await p.locator('#purchases-list [data-purchase]').click();await p.locator('#delete-purchase').click();
+   await p.waitForFunction(()=>document.getElementById('data-status').textContent.includes('Compra eliminada'));
+   assert.equal(await p.locator('#purchases-list [data-purchase]').count(),0);assert.match(await p.locator('#spent').textContent(),/20/);
+   await p.evaluate(()=>mock.seed.failRead=false);await p.locator('#refresh-data-btn').click();await p.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');
+   assert.equal(await p.evaluate(()=>mock.data.purchases.length),2);assert.equal(stale.remote,0);assert.deepEqual(stale.errors,[]);await stale.context.close();
+ }
+ console.log(cases+' responsive scenarios passed; filters, real-value reports, safe navigation, shared reads, simulated insert/delete/budget/login/logout, PWA cache, calendar rollover, shared budgets and post-write read failures passed. No live Supabase calls.');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error.message);process.exit(1);});

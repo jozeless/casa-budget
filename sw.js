@@ -1,4 +1,4 @@
-const CACHE = 'casa-shell-v3-framework';
+const CACHE = 'casa-shell-v4-framework-sync';
 const SHELL = ['./','./index.html','./styles.css','./app.js','./budget.js','./config.js','./manifest.webmanifest','./icon.svg'];
 const shellUrls = new Set(SHELL.map(path=>new URL(path,self.registration.scope).href));
 self.addEventListener('install', event => {
