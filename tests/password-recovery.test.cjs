@@ -48,7 +48,7 @@ function mount({hash = recoveryHash, initialize, getSession, updateUser} = {}) {
     console: {error(...args) {logs.push(args);}, warn(...args) {logs.push(args);}, log(...args) {logs.push(args);}},
     location: {hash, search: '', pathname: '/casa-budget/', protocol: 'http:', hostname: 'test'},
     history: {replaceState() {}}, navigator: {},
-    window: {CASA_CONFIG: {supabaseUrl: 'https://test.supabase.co', supabaseAnonKey: 'public-placeholder'}, supabase: {createClient() {return client;}}},
+    window: {CASA_CONFIG: {supabaseUrl: 'https://test.supabase.co', supabaseAnonKey: 'sb_publishable_test'}, supabase: {createClient() {return client;}}},
     document: {getElementById: element, querySelectorAll() {return [];}},
     localStorage: {getItem() {return null;}}
   };
