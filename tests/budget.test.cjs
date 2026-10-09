@@ -38,3 +38,11 @@ test('empty and large purchase sets return complete, real totals',()=>{
   assert.equal(budget.total([]),0);assert.equal(budget.history([],[],{}).length,0);
   const purchases=Array.from({length:1500},(_,index)=>p('2026-10-01',1,'Jumbo',String(index)));assert.equal(budget.history(purchases,[],{}).length,1500);assert.equal(budget.total(purchases),150000);
 });
+
+test('product identity normalizes whitespace and case but preserves accents, brands and sizes',()=>{
+ assert.equal(budget.productKey('  Milk  WHOLE  '),'milk whole');assert.notEqual(budget.productKey('Café'),budget.productKey('Cafe'));assert.notEqual(budget.productKey('Milk 1L'),budget.productKey('Milk 2L'));
+});
+test('product history counts distinct purchases and recorded line totals',()=>{
+ const rows=[{purchase_id:'a',purchased_on:'2026-10-01',line_total:2},{purchase_id:'a',purchased_on:'2026-10-01',line_total:3},{purchase_id:'b',purchased_on:'2026-09-01',line_total:4}];
+ assert.equal(budget.productHistory(rows).count,2);assert.equal(budget.productHistory(rows).total,900);assert.equal(budget.productHistory(rows,'2026-10').total,500);assert.equal(budget.productHistory(rows,'2026-10').count,1);
+});

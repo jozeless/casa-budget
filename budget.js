@@ -27,7 +27,12 @@
     const matchingIds=new Set(items.filter(item=>normalize(item.name).includes(search)).map(item=>item.purchase_id));
     return purchases.filter(p=>(!month||p.purchased_on.startsWith(month))&&(!supermarket||p.store===supermarket)&&(!search||normalize(p.store).includes(search)||matchingIds.has(p.id)));
   }
-  const api={cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
+  const productKey=value=>String(value??'').trim().replace(/\s+/gu,' ').toLocaleLowerCase('es');
+  function productHistory(rows,month=''){
+    const lines=rows.filter(row=>!month||row.purchased_on.startsWith(month));
+    return {lines,total:lines.reduce((sum,row)=>sum+cents(row.line_total),0),count:new Set(lines.map(row=>row.purchase_id)).size};
+  }
+  const api={productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   else root.CASA_BUDGET=api;
 })(typeof window!=='undefined'?window:globalThis);

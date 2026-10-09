@@ -157,3 +157,14 @@ code { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .progress > div { transition: none; }
 }
+
+/* Phase 2 keeps dialogs above the fixed navigation and supports small screens. */
+.dialog-actions,.detail-bottom { flex-wrap: wrap; }
+.dialog-actions { display:flex; gap:12px; margin-top:16px; }
+.product-link { display:block; text-align:left; width:100%; background:transparent; color:var(--text); border:0; padding:12px 0; }
+.product-link:focus-visible { outline:2px solid var(--blue); outline-offset:3px; }
+.product-entry { padding:12px; border:1px solid var(--line); border-radius:var(--radius-md); }
+.product-entry p { overflow-wrap:anywhere; }
+
+.product-link .report-meter,.product-link .report-meter > span { display:block; }
+.product-link .report-meter > span { height:100%; background:var(--purple); }
