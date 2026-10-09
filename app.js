@@ -10,7 +10,46 @@ const view = name => ['setup','auth','recovery','home-setup','dashboard'].forEac
 let toastTimer;
 const notice = msg => {const el=$('toast'); el.textContent=msg;el.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('hidden'),4500);};
 const fail = err => {notice('Error: '+(err?.message||'Intenta nuevamente'));};
-const clientConfig = () => {const c=window.CASA_CONFIG||{};return {url:(c.supabaseUrl||localStorage.getItem('casa_url')||'').trim(),key:(c.supabaseAnonKey||localStorage.getItem('casa_key')||'').trim()};};
+const configOverrideKey = 'casa_config_override';
+function publicConfig(url, key){
+  url=typeof url==='string'?url.trim():'';
+  key=typeof key==='string'?key.trim():'';
+  if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url) || !/^sb_publishable_[A-Za-z0-9_-]+$/.test(key))return null;
+  return {url:url.replace(/\/$/,''),key};
+}
+function defaultConfig(){
+  const config=window.CASA_CONFIG||{};
+  return publicConfig(config.supabaseUrl,config.supabaseAnonKey);
+}
+function clientConfig(){
+  const defaults=defaultConfig();
+  try{
+    const override=JSON.parse(localStorage.getItem(configOverrideKey)||'null');
+    // An override belongs to this default pair; updated defaults supersede stale overrides.
+    if(override && override.defaultUrl===(defaults?.url||'') && override.defaultKey===(defaults?.key||'')){
+      const pair=publicConfig(override.url,override.key);
+      if(pair)return pair;
+    }
+    if(defaults)return defaults;
+    // Preserve complete public settings from earlier manual setup, without mixing sources.
+    return publicConfig(localStorage.getItem('casa_url'),localStorage.getItem('casa_key'));
+  }catch{return defaults;}
+}
+function openConfig(){
+  const config=clientConfig();
+  $('supabase-url').value=config?.url||'';
+  $('supabase-key').value=config?.key||'';
+  $('restore-config-btn').disabled=!defaultConfig();
+  $('config-cancel-btn').disabled=!config;
+  $('config-message').textContent=defaultConfig()?'Los cambios se aplican solo a este navegador. Puedes restaurar la configuración predeterminada.':'Falta una configuración pública válida. Introduce ambos datos del mismo proyecto.';
+  view('setup');
+}
+function restartWithConfig(){
+  // Restart the page so no old client, pending request, or household state is reused.
+  authSubscription?.unsubscribe();
+  store.client?.auth.stopAutoRefresh();
+  location.reload();
+}
 const authRedirect = 'https://jozeless.github.io/casa-budget/';
 // Read only link metadata; the SDK handles credentials and session creation.
 const linkParams = new URLSearchParams(location.hash.slice(1));
@@ -48,8 +87,9 @@ function passwordError(error, changingPassword=false){
   return 'No se pudo completar la operación. Comprueba tu conexión y vuelve a intentarlo.';
 }
 async function start(){
-  const {url,key}=clientConfig();
-  if(!url||!key){view('setup');return;}
+  const config=clientConfig();
+  if(!config){openConfig();return;}
+  const {url,key}=config;
   const generation=++authGeneration;
   try {
     authSubscription?.unsubscribe();
@@ -154,7 +194,27 @@ function purchaseDetail(id){const p=store.purchases.find(x=>x.id===id);if(!p)ret
   $('detail-title').textContent=p.store;$('detail-subtitle').textContent=new Date(p.purchased_on+'T12:00:00').toLocaleDateString('es-ES',{dateStyle:'long'});$('detail-total').textContent=fmt(p.total);
   const its=store.items.filter(i=>i.purchase_id===id);$('detail-items').innerHTML=its.length?its.map(i=>`<div class="detail-item"><span>${safe(i.name)} <span class="muted">×${safe(i.quantity)}</span></span><b>${fmt(i.line_total)}</b></div>`).join(''):'<p class="muted">Esta compra no tiene productos detallados.</p>';dialog('detail-dialog');
 }
-$('setup-form').onsubmit=e=>{e.preventDefault();const url=$('supabase-url').value.trim(),key=$('supabase-key').value.trim();if(!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)){notice('Utiliza la URL https://xxxxx.supabase.co');return;}localStorage.setItem('casa_url',url.replace(/\/$/,''));localStorage.setItem('casa_key',key);start().catch(fail);};
+$('config-btn').onclick=openConfig;
+$('config-cancel-btn').onclick=()=>route().catch(fail);
+$('restore-config-btn').onclick=()=>{
+  if(!defaultConfig())return;
+  try{
+    localStorage.removeItem(configOverrideKey);
+    localStorage.removeItem('casa_url');localStorage.removeItem('casa_key');
+    restartWithConfig();
+  }catch{$('config-message').textContent='No se pudo restaurar la configuración. Comprueba los permisos de almacenamiento del navegador.';}
+};
+$('setup-form').onsubmit=event=>{
+  event.preventDefault();
+  const pair=publicConfig($('supabase-url').value,$('supabase-key').value);
+  if(!pair){$('config-message').textContent='Utiliza una URL https://xxxxx.supabase.co y una clave pública sb_publishable_… del mismo proyecto.';return;}
+  const defaults=defaultConfig();
+  try{
+    localStorage.setItem(configOverrideKey,JSON.stringify({...pair,defaultUrl:defaults?.url||'',defaultKey:defaults?.key||''}));
+    localStorage.removeItem('casa_url');localStorage.removeItem('casa_key');
+    restartWithConfig();
+  }catch{$('config-message').textContent='No se pudo guardar la configuración. Comprueba los permisos de almacenamiento del navegador.';}
+};
 $('forgot-password-btn').onclick=async()=>{
   const email=$('auth-email');
   if(!email.reportValidity())return;
@@ -212,6 +272,6 @@ $('purchases-list').onclick=e=>{const card=e.target.closest('[data-purchase]');i
 $('delete-purchase').onclick=async()=>{if(!store.selected||!confirm(`¿Eliminar la compra de ${store.selected.store}?`))return;try{const r=await store.client.from('purchases').delete().eq('id',store.selected.id);if(r.error)throw r.error;$('detail-dialog').close();await refresh();notice('Compra eliminada');}catch(e){fail(e);}};
 $('copy-invite').onclick=async()=>{try{await navigator.clipboard.writeText(store.household.invite_code);notice('Código copiado');}catch(e){notice('Selecciona el código y cópialo manualmente.');}};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
-if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('./sw.js').catch(console.warn);
+if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(console.warn);
 start().catch(fail);
 })();
