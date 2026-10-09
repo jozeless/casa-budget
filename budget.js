@@ -32,7 +32,12 @@
     const lines=rows.filter(row=>!month||row.purchased_on.startsWith(month));
     return {lines,total:lines.reduce((sum,row)=>sum+cents(row.line_total),0),count:new Set(lines.map(row=>row.purchase_id)).size};
   }
-  const api={productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
+  function remainingBudget(budget,spent){
+    const limit=cents(budget),balance=limit-cents(spent);
+    const percentage=limit>0?Math.max(0,Math.min(100,balance/limit*100)):0;
+    return {percentage,level:percentage>60?'high':percentage>30?'medium':'low',zeroBudget:limit===0};
+  }
+  const api={remainingBudget,productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   else root.CASA_BUDGET=api;
 })(typeof window!=='undefined'?window:globalThis);

@@ -1,12 +1,13 @@
-# CASA · Compras compartidas (2.0 · Fase 2)
+# CASA · Compras compartidas (2.5)
 
 Una app móvil de gastos del supermercado para dos personas, con Supabase (login + base de datos privada) y GitHub Pages. **Esta fase NO utiliza OpenAI ni cobra API.**
 
 ## Interfaz de CASA 2.0
 
-- **Inicio:** presupuesto, gasto y saldo del mes actual, recomendación para lo que queda de la semana y las tres compras más recientes de ese mes.
+- **Inicio:** presupuesto, gasto y saldo del mes actual, recomendación para lo que queda de la semana y barra del porcentaje de presupuesto disponible.
 - **Historial:** filtro de mes o todos los meses, supermercado y búsqueda por supermercado o productos registrados. Detalles, edición atómica y eliminación con confirmación.
 - **Data:** importes reales por supermercado y producto para el mes seleccionado y evolución del gasto de los últimos seis meses. Las compras sin productos detallados no se asignan a productos ni categorías inventadas.
+- **Settings:** nombre del hogar, presupuesto, invitación privada, cuenta, configuración pública de Supabase y cierre de sesión.
 - **Añadir (+):** compra manual desde cualquier vista. Subir recibos permanece desactivado.
 
 La recomendación semanal divide el saldo positivo del mes entre los días restantes (incluido hoy) y lo multiplica por los días desde hoy hasta el domingo, recortados al final del mes. Usa días de calendario locales, semanas lunes-domingo e importes en céntimos. Un saldo negativo se muestra como tal y recomienda cero. No arrastra presupuesto ni gastos de otros meses.
@@ -84,3 +85,10 @@ No pongas claves secretas en `config.js` ni en repositorios. RLS debe estar habi
 - La migración se aplica manualmente: instrucciones en [migrations/README.md](migrations/README.md). No se ejecuta al iniciar CASA.
 
 Pruebas: `TZ=Europe/Amsterdam node --test`, `node scripts/check-ui.cjs` (Playwright + Chromium; Supabase simulado) y `node scripts/check-sql.cjs` (Docker + PostgreSQL 17 desechable; pruebas reales de SQL, sin Supabase remoto).
+
+
+## Framework 2.5
+
+Encabezado compacto con icono provisional, CASA y botón accesible de actualización. Para corregir una conexión que impida entrar, la pantalla de autenticación conserva un acceso auxiliar a configuración. El mensaje de actualización exitosa se anuncia a lectores de pantalla; los errores permanecen visibles. Inicio contiene solo saldo/presupuesto y recomendación semanal. Las compras se consultan en Historial, y el código privado de invitación solo se muestra en Settings.
+
+La barra representa presupuesto disponible: verde por encima del 60%, naranja por encima del 30% hasta el 60%, rojo del 0% al 30%. Se limita entre 0% y 100%; saldo negativo y presupuesto cero muestran barra vacía y estado rojo. El presupuesto cero incluye una explicación. La transición respeta movimiento reducido. No requiere cambios de base de datos.
