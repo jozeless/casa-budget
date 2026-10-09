@@ -1,5 +1,5 @@
-const CACHE = 'casa-shell-v2-public-config';
-const SHELL = ['./','./index.html','./styles.css','./app.js','./config.js','./manifest.webmanifest','./icon.svg'];
+const CACHE = 'casa-shell-v4-framework-sync';
+const SHELL = ['./','./index.html','./styles.css','./app.js','./budget.js','./config.js','./manifest.webmanifest','./icon.svg'];
 const shellUrls = new Set(SHELL.map(path=>new URL(path,self.registration.scope).href));
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'})))));

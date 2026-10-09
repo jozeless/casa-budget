@@ -12,8 +12,8 @@ function worker(){
   vm.runInNewContext(source,{URL,Request,Response,Promise,Set,caches,self:{location:{origin},registration:{scope},clients:{async claim(){claimed=true;}},skipWaiting(){},addEventListener(name,handler){handlers[name]=handler;}},async fetch(request){requests.push(request);return reply(request);}});
   return {stores,requests,caches,get claimed(){return claimed;},set reply(value){reply=value;},async install(){let promise;handlers.install({waitUntil(value){promise=value;}});await promise;},async activate(){let promise;handlers.activate({waitUntil(value){promise=value;}});await promise;},async request(path){let promise;handlers.fetch({request:new Request(path.startsWith('https:')?path:scope+path),respondWith(value){promise=value;}});return promise?await promise:undefined;}};
 }
-test('install reloads all seven shell assets and activation preserves unrelated caches',async()=>{
-  const sw=worker();await sw.caches.open('casa-shell-v1');await sw.caches.open('other-app');await sw.install();assert.equal(sw.requests.length,7);assert(sw.requests.every(request=>request.cache==='reload'));
+test('install reloads all eight shell assets and activation preserves unrelated caches',async()=>{
+  const sw=worker();await sw.caches.open('casa-shell-v1');await sw.caches.open('other-app');await sw.install();assert.equal(sw.requests.length,8);assert(sw.requests.every(request=>request.cache==='reload'));
   await sw.activate();assert(!sw.stores.has('casa-shell-v1'));assert(sw.stores.has('other-app'));assert(sw.claimed);
 });
 test('fresh config bypasses HTTP cache and replaces the offline copy',async()=>{
