@@ -1,4 +1,4 @@
-# CASA · Compras compartidas (2.5)
+# CASA · Compras compartidas (2.6)
 
 Una app móvil de gastos del supermercado para dos personas, con Supabase (login + base de datos privada) y GitHub Pages. **Esta fase NO utiliza OpenAI ni cobra API.**
 
@@ -6,7 +6,7 @@ Una app móvil de gastos del supermercado para dos personas, con Supabase (login
 
 - **Inicio:** presupuesto, gasto y saldo del mes actual, recomendación para lo que queda de la semana y barra del porcentaje de presupuesto disponible.
 - **Historial:** filtro de mes o todos los meses, supermercado y búsqueda por supermercado o productos registrados. Detalles, edición atómica y eliminación con confirmación.
-- **Data:** importes reales por supermercado y producto para el mes seleccionado y evolución del gasto de los últimos seis meses. Las compras sin productos detallados no se asignan a productos ni categorías inventadas.
+- **Data:** Resumen, Tiendas y Productos comparten mes y año. Indicadores, gasto por tienda y producto, y evolución mensual/semanal real. Las compras sin productos detallados no se asignan a productos ni categorías inventadas.
 - **Settings:** nombre del hogar, presupuesto, invitación privada, cuenta, configuración pública de Supabase y cierre de sesión.
 - **Añadir (+):** compra manual desde cualquier vista. Subir recibos permanece desactivado.
 
@@ -92,3 +92,15 @@ Pruebas: `TZ=Europe/Amsterdam node --test`, `node scripts/check-ui.cjs` (Playwri
 Encabezado compacto con icono provisional, CASA y botón accesible de actualización. Para corregir una conexión que impida entrar, la pantalla de autenticación conserva un acceso auxiliar a configuración. El mensaje de actualización exitosa se anuncia a lectores de pantalla; los errores permanecen visibles. Inicio contiene solo saldo/presupuesto y recomendación semanal. Las compras se consultan en Historial, y el código privado de invitación solo se muestra en Settings.
 
 La barra representa presupuesto disponible: verde por encima del 60%, naranja por encima del 30% hasta el 60%, rojo del 0% al 30%. Se limita entre 0% y 100%; saldo negativo y presupuesto cero muestran barra vacía y estado rojo. El presupuesto cero incluye una explicación. La transición respeta movimiento reducido. No requiere cambios de base de datos.
+
+
+## CASA 2.6 — Data Intelligence
+
+- **Resumen:** gasto del mes, compras distintas, ticket promedio y presupuesto utilizado sin limitarlo al 100%. Sin compras, el ticket muestra «Sin compras»; con presupuesto cero, el porcentaje muestra «No aplicable». Los meses históricos se comparan expresamente con el presupuesto vigente, porque CASA no almacena presupuestos históricos.
+- **Evolución mensual:** seis meses consecutivos terminando en el mes elegido, con ceros cuando no hay compras. **Semanal:** semanas lunes–domingo que intersectan ese mes; solo se suma gasto perteneciente al mes elegido, incluso cuando una semana cruza meses o años. No utiliza la recomendación semanal de Inicio.
+- **Tiendas:** gasto y porcentaje del mes, orden descendente. Se agrupan solo espacios exteriores y mayúsculas, sin modificar nombres en Supabase. Al pulsar una tienda se muestran sus compras y acceso al detalle existente.
+- **Productos:** gasto registrado y número de compras distintas. Varias líneas del mismo producto en un recibo suman sus importes y cuentan una compra. La identidad conserva acentos, marcas y tamaños; la búsqueda puede ignorar acentos sin fusionar identidades. El historial existente permite consultar el mes seleccionado o Todo.
+- Los períodos incluyen meses vacíos entre el primer registro y el mes actual, al menos los seis recientes, y conservan el período elegido manualmente. Las listas muestran 50 entradas y permiten ampliar sin volver a consultar.
+- Las agregaciones se reutilizan mientras no cambien período, compras, líneas o presupuesto. Cambiar pestaña, buscar o seleccionar tienda no consulta Supabase. Actualizar preserva pestaña, búsqueda y período; el cambio de sesión limpia el análisis y los filtros. Los avisos de posible desactualización permanecen visibles.
+
+No requiere SQL ni cambios en RLS, configuración, autenticación o RPC de escritura. Las pruebas de navegador usan fixtures y bloquean las conexiones a Supabase. Las pruebas de SQL, si se ejecutan, utilizan PostgreSQL desechable y no el proyecto real.

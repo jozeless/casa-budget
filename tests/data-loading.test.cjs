@@ -5,12 +5,14 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
 function mount(seed,initialDate){
  let clock=initialDate?new Date(initialDate).getTime():Date.now();
  class ClockDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
+ let modelCalls=0;
  const events={},timers=[],storage=new Map(),rows=[];
  const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',innerHTML:'',hidden:true,dataset:{},style:{},classList:{toggle(_name,value){node(id).hidden=value;},add(){},remove(){}},attributes:{},setAttribute(name,value){this.attributes[name]=value;},reset(){},close(){this.open=false;},showModal(){this.open=true;}});return nodes.get(id);};
  const buttons=['home','history','data','settings'].map(name=>({dataset:{page:name},setAttribute(){},removeAttribute(){}}));
- const context={Date:ClockDate,confirm(){return true;},Intl,URLSearchParams,Number,String,Map,Set,Math,Promise,JSON,setTimeout,clearTimeout,queueMicrotask,navigator:{},history:{replaceState(){}},location:{hash:'',search:''},document:{addEventListener(name,fn){events[name]=fn;},getElementById:node,querySelectorAll(selector){return selector==='[data-page]'?buttons:selector==='#items-container .item-row'?rows:[];}},localStorage:{getItem(key){return storage.get(key)||null;},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},window:{crypto:require('node:crypto').webcrypto,setTimeout(fn,delay){timers.push({fn,delay});return timers.length;},clearTimeout(){},addEventListener(name,fn){events[name]=fn;},CASA_BUDGET:budget,CASA_CONFIG:{supabaseUrl:'https://test.supabase.co',supabaseAnonKey:'sb_publishable_test'}}};
+ const dataButtons=['summary','stores','products'].map(name=>({dataset:{dataTab:name},attributes:{},setAttribute(key,value){this.attributes[key]=value;},focus(){}}));
+ const context={Date:ClockDate,confirm(){return true;},Intl,URLSearchParams,Number,String,Map,Set,Math,Promise,JSON,setTimeout,clearTimeout,queueMicrotask,navigator:{},history:{replaceState(){}},location:{hash:'',search:''},document:{addEventListener(name,fn){events[name]=fn;},getElementById:node,querySelectorAll(selector){return selector==='[data-page]'?buttons:selector==='[data-data-tab]'?dataButtons:selector==='#items-container .item-row'?rows:[];}},localStorage:{getItem(key){return storage.get(key)||null;},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},window:{crypto:require('node:crypto').webcrypto,setTimeout(fn,delay){timers.push({fn,delay});return timers.length;},clearTimeout(){},addEventListener(name,fn){events[name]=fn;},CASA_BUDGET:{...budget,dataIntelligence(...args){modelCalls++;return budget.dataIntelligence(...args);}},CASA_CONFIG:{supabaseUrl:'https://test.supabase.co',supabaseAnonKey:'sb_publishable_test'}}};
  vm.createContext(context);vm.runInContext('('+installMock.toString()+')('+JSON.stringify(seed)+')',context);vm.runInContext(app,context);
- return {node,buttons,mock:context.window.mock,events,timers,rows,reload(){vm.runInContext(app,context);},setDate(date){clock=new Date(date).getTime();}};
+ return {node,buttons,dataButtons,get modelCalls(){return modelCalls;},mock:context.window.mock,events,timers,rows,reload(){vm.runInContext(app,context);},setDate(date){clock=new Date(date).getTime();}};
 }
 const current=new Date();const month=budget.monthKey(current);const purchases=count=>Array.from({length:count},(_,index)=>({id:'p'+String(index).padStart(4,'0'),household_id:'test-home',store:'Jumbo',purchased_on:month+'-01',total:1,created_at:'2026-01-01'}));
 test('concurrent auth/start routing loads household and purchases only once; tabs do not query',async()=>{
@@ -69,14 +71,14 @@ test('successful save followed by failed read keeps purchase in all views and co
  const ui=mount({budget:100,purchases:[fixture('one',month+'-01',20)]});await settle();
  ui.node('purchase-store').value='Aldi';ui.node('purchase-date').value=month+'-02';ui.node('purchase-total').value='10';ui.mock.seed.failReadAfterWrite=true;
  await ui.node('purchase-form').onsubmit({preventDefault(){}});
- assert.equal(ui.mock.data.purchases.length,2);assert.match(ui.node('spent').textContent,/30/);assert.match(ui.node('purchases-list').innerHTML,/Aldi/);assert.match(ui.node('store-report').innerHTML,/Aldi/);
+ assert.equal(ui.mock.data.purchases.length,2);assert.match(ui.node('spent').textContent,/30/);assert.match(ui.node('data-total').textContent,/30/);assert.equal(ui.node('data-count').textContent,'2');assert.match(ui.node('purchases-list').innerHTML,/Aldi/);assert.match(ui.node('store-report').innerHTML,/Aldi/);
  assert.match(ui.node('toast').textContent,/Compra guardada/);assert.match(ui.node('toast').textContent,/no repitas/);assert.match(ui.node('data-status').textContent,/desactualizada/);
- ui.mock.seed.failRead=false;ui.mock.seed.failReadAfterWrite=false;await ui.node('refresh-data-btn').onclick();assert.equal(ui.mock.data.purchases.length,2);assert.match(ui.node('spent').textContent,/30/);
+ ui.mock.seed.failRead=false;ui.mock.seed.failReadAfterWrite=false;await ui.node('refresh-data-btn').onclick();assert.equal(ui.mock.data.purchases.length,2);assert.match(ui.node('spent').textContent,/30/);assert.match(ui.node('data-total').textContent,/30/);assert.equal(ui.node('data-count').textContent,'2');
 });
 test('successful deletion followed by failed read removes purchase from all views',async()=>{
  const ui=mount({budget:100,purchases:[fixture('one',month+'-01',20)]});await settle();
  ui.node('purchases-list').onclick({target:{closest(){return {dataset:{purchase:'one'}};}}});ui.mock.seed.failRead=true;
- await ui.node('delete-purchase').onclick();assert.equal(ui.mock.data.purchases.length,0);assert.match(ui.node('spent').textContent,/0,00/);assert.doesNotMatch(ui.node('purchases-list').innerHTML,/data-purchase=/);assert.match(ui.node('store-report').innerHTML,/No hay/);assert.match(ui.node('toast').textContent,/Compra eliminada/);assert.match(ui.node('data-status').textContent,/desactualizada/);
+ await ui.node('delete-purchase').onclick();assert.equal(ui.mock.data.purchases.length,0);assert.match(ui.node('spent').textContent,/0,00/);assert.equal(ui.node('data-count').textContent,'0');assert.equal(ui.node('data-average').textContent,'Sin compras');assert.doesNotMatch(ui.node('purchases-list').innerHTML,/data-purchase=/);assert.match(ui.node('store-report').innerHTML,/No hay/);assert.match(ui.node('toast').textContent,/Compra eliminada/);assert.match(ui.node('data-status').textContent,/desactualizada/);
 });
 test('failed write is not reported as saved and duplicate submissions while saving are ignored',async()=>{
  const ui=mount({purchases:[],delay:2});await settle();ui.node('purchase-store').value='Aldi';ui.node('purchase-date').value=month+'-02';ui.node('purchase-total').value='10';ui.mock.seed.failWrite=true;
@@ -104,7 +106,7 @@ test('editing keeps purchase identity, changes month and updates shared reports'
  ui.node('purchases-list').onclick({target:{closest(){return {dataset:{purchase:'one'}};}}});ui.node('edit-purchase').onclick();
  const otherMonth=budget.monthKey(new Date(current.getFullYear(),current.getMonth()-1,1));form(ui,'Lidl','30',otherMonth+'-01');await submit(ui);
  assert.equal(ui.mock.data.purchases.length,1);assert.equal(ui.mock.data.purchases[0].id,'one');assert.equal(ui.mock.data.purchases[0].total,30);assert.match(ui.node('spent').textContent,/0,00/);assert.match(ui.node('remaining').textContent,/100/);
- ui.node('data-month').value=otherMonth;ui.node('data-month').onchange();assert.match(ui.node('store-report').innerHTML,/Lidl/);assert.match(ui.node('store-report').innerHTML,/30/);
+ ui.node('data-month').value=otherMonth;ui.node('data-month').onchange();ui.dataButtons[1].onclick();assert.match(ui.node('store-report').innerHTML,/Lidl/);assert.match(ui.node('store-report').innerHTML,/30/);
 });
 test('stale editing revision rejects overwrite and leaves existing purchase intact',async()=>{
  const ui=mount({purchases:[fixture('one',month+'-01',20)]});await settle();ui.node('purchases-list').onclick({target:{closest(){return {dataset:{purchase:'one'}};}}});ui.node('edit-purchase').onclick();ui.mock.data.purchases[0].revision++;form(ui,'Aldi','30');await submit(ui);
@@ -146,4 +148,22 @@ test('all four views share data and Settings budget follows remote refresh',asyn
  const ui=mount({budget:100,purchases:[fixture('one',month+'-01',20)]});await settle();const before=ui.mock.calls.length;
  for(const button of ui.buttons){button.onclick();assert.equal(ui.node('screen-heading').textContent,{home:'Inicio',history:'Historial',data:'Data',settings:'Settings'}[button.dataset.page]);assert.equal(ui.node(button.dataset.page+'-page').hidden,false);}
  assert.equal(ui.mock.calls.length,before);ui.mock.data.household.monthly_budget=200;await ui.node('refresh-data-btn').onclick();assert.match(ui.node('settings-budget').textContent,/200/);assert.equal(ui.node('progress-bar').style.width,'90%');
+});
+test('Data tabs share period and cached aggregation without queries, search preserves product identity',async()=>{
+ const ps=[fixture('a','2026-01-01',10),fixture('b','2026-01-02',20)];
+ const ui=mount({budget:20,purchases:ps,items:[{id:'i1',purchase_id:'a',name:'Café',line_total:5},{id:'i2',purchase_id:'a',name:'CAFÉ',line_total:5},{id:'i3',purchase_id:'b',name:'Cafe',line_total:20}]},'2026-01-03T12:00:00');await settle();
+ assert.match(ui.node('data-used').textContent,/150/);const calls=ui.mock.calls.length,calculations=ui.modelCalls;
+ for(const button of ui.dataButtons)button.onclick();assert.equal(ui.node('data-month').value,'2026-01');assert.equal(ui.mock.calls.length,calls);
+ ui.node('data-product-search').value='CAFE';ui.node('data-product-search').oninput();assert.equal(ui.modelCalls,calculations);assert.match(ui.node('data-product-count').textContent,/2 productos/);assert.match(ui.node('product-report').innerHTML,/1 compra distinta/);
+ ui.mock.data.household.monthly_budget=60;await ui.node('refresh-data-btn').onclick();assert.equal(ui.dataButtons[2].attributes['aria-selected'],'true');assert.equal(ui.node('data-product-search').value,'CAFE');assert.equal(ui.node('data-month').value,'2026-01');assert.match(ui.node('data-used').textContent,/50/);
+});
+test('Data limits large product/store purchase lists without truncating totals',async()=>{
+ const ps=Array.from({length:250},(_,i)=>fixture('p'+i,month+'-01',1));
+ const ui=mount({purchases:ps,items:ps.map((p,i)=>({id:'i'+i,purchase_id:p.id,name:'Product '+i,line_total:1}))});await settle();await settle();ui.dataButtons[2].onclick();assert.equal((ui.node('product-report').innerHTML.match(/data-product=/g)||[]).length,50);assert.equal(ui.node('data-count').textContent,'250');
+ const before=ui.mock.calls.length;ui.node('data-products-more').onclick();assert.equal((ui.node('product-report').innerHTML.match(/data-product=/g)||[]).length,100);
+ ui.dataButtons[1].onclick();ui.node('store-report').onclick({target:{closest(){return {dataset:{store:'jumbo'}};}}});assert.equal((ui.node('data-store-purchases').innerHTML.match(/data-purchase=/g)||[]).length,50);ui.node('data-store-more').onclick();assert.equal((ui.node('data-store-purchases').innerHTML.match(/data-purchase=/g)||[]).length,100);assert.equal(ui.mock.calls.length,before);
+});
+test('Data uses selected historic year, retains filters after refresh and clears on logout',async()=>{
+ const ui=mount({purchases:[fixture('historic','2025-01-01',10)]});await settle();ui.node('data-month').value='2025-01';ui.node('data-month').onchange();ui.dataButtons[1].onclick();await ui.node('refresh-data-btn').onclick();assert.equal(ui.node('data-month').value,'2025-01');assert.equal(ui.dataButtons[1].attributes['aria-selected'],'true');assert.match(ui.node('data-budget-note').textContent,/no con un presupuesto histórico/);
+ ui.mock.emit('SIGNED_OUT',null);assert.equal(ui.node('data-total').textContent,'—');assert.equal(ui.node('store-report').innerHTML,'');assert.equal(ui.node('data-store-purchases').innerHTML,'');assert.equal(ui.node('data-month').value,'');assert.equal(ui.dataButtons[0].attributes['aria-selected'],'true');
 });
