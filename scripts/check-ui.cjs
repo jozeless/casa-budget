@@ -43,6 +43,17 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
      if(name==='empty'){assert.match(await page.locator('#spent').textContent(),/0/);}
      if(name==='normal'){assert.match(await page.locator('#spent').textContent(),/20/);assert.match(await page.locator('#remaining').textContent(),/80/);}
      if(name==='many-negative'){assert.match(await page.locator('#remaining').textContent(),/-350/);assert.match(await page.locator('#weekly-amount').textContent(),/0/);assert(await page.locator('#budget-warning').isVisible());}
+     const fab=await page.locator('#add-menu-btn').evaluate(el=>{
+       const rect=el.getBoundingClientRect(),nav=document.getElementById('app-nav').getBoundingClientRect(),style=getComputedStyle(el);
+       return {top:rect.top,bottom:rect.bottom,center:rect.x+rect.width/2,navTop:nav.top,navBottom:nav.bottom,navCenter:nav.x+nav.width/2,width:rect.width,height:rect.height,bg:style.backgroundColor,color:style.color,label:el.getAttribute('aria-label'),popup:el.getAttribute('aria-haspopup')};
+     });
+     assert(Math.abs(fab.center-fab.navCenter)<1,'FAB centered in navigation');
+     assert(Math.abs(fab.navTop-fab.top-12)<1,'FAB protrudes only 12px above navigation');
+     assert(fab.bottom>fab.navTop&&fab.bottom<fab.navBottom,'FAB overlaps the navigation surface');
+     assert.equal(fab.bg,'rgb(123, 92, 255)');assert.equal(fab.color,'rgb(255, 255, 255)');
+     assert(fab.width>=44&&fab.height>=44);assert.equal(fab.label,'Añadir compra');assert.equal(fab.popup,'dialog');
+     await page.locator('#add-menu-btn').focus();assert(await page.locator('#add-menu-btn').evaluate(el=>document.activeElement===el&&getComputedStyle(el).outlineStyle!=='none'));
+     await page.keyboard.press('Enter');assert(await page.locator('#add-menu-dialog').isVisible());await page.locator('[data-close="add-menu-dialog"]').click();
      const before=await page.evaluate(()=>mock.calls.length);
      for(const tab of ['history','data','settings','home']){
        await page.locator('[data-page="'+tab+'"]').click();assert(await page.locator('#'+tab+'-page').isVisible());assert.equal(await page.locator('[aria-current="page"]').count(),1);
