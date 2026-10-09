@@ -33,10 +33,12 @@ function scheduleCalendar(){
 }
 function resumeCalendar(){checkCalendar();scheduleCalendar();}
 function resetDashboard(){
-  for(const id of ['remaining','spent','budget','weekly-amount'])$(id).textContent='—';
-  for(const id of ['recent-purchases','purchases-list','store-report','product-report','monthly-report'])$(id).innerHTML='';
+  for(const id of ['remaining','spent','budget','settings-budget','weekly-amount'])$(id).textContent='—';
+  for(const id of ['purchases-list','store-report','product-report','monthly-report'])$(id).innerHTML='';
   $('purchase-count').textContent='';$('weekly-period').textContent='';$('progress-bar').style.width='0%';
-  $('budget-warning').classList.add('hidden');
+  $('budget-warning').classList.add('hidden');$('budget-zero').classList.add('hidden');
+  delete $('budget-progress').dataset.level;
+  $('budget-progress').setAttribute('aria-valuenow','0');$('budget-progress').setAttribute('aria-valuetext','Presupuesto pendiente de actualizar');
   for(const id of ['history-month','history-store','history-search','data-month']){
     $(id).value='';if($(id).dataset){delete $(id).dataset.initialized;delete $(id).dataset.manual;delete $(id).dataset.currentMonth;}
   }
@@ -46,6 +48,7 @@ function resetDashboard(){
 const view = name => {
   ['setup','auth','recovery','home-setup','dashboard'].forEach(v=>$(v+'-view').classList.toggle('hidden',v!==name));
   const showNav=name==='dashboard'&&!!store.household&&!recovery.active;
+  $('refresh-data-btn').classList.toggle('hidden',!showNav);
   $('app-nav').classList.toggle('hidden',!showNav);$('add-menu-btn').classList.toggle('hidden',!showNav);
   document.body?.classList.toggle('app-open',showNav);
 };
@@ -218,6 +221,10 @@ async function paged(query){
     if((data||[]).length<200)return rows;
   }
 }
+function dataStatus(message){
+  $('data-status').textContent=message;
+  $('data-status').classList.toggle('sr-only',message==='Compras actualizadas');
+}
 async function refresh(force=false){
   if(!store.household)return;
   const hadSnapshot=store.loaded;
@@ -228,7 +235,7 @@ async function refresh(force=false){
   }
   if(store.loaded){render();return;}
   const householdId=store.household.id,version=store.dataVersion;
-  $('data-status').textContent='Cargando compras…';$('refresh-data-btn').disabled=true;
+  dataStatus('Cargando compras…');$('refresh-data-btn').disabled=true;
   const promise=(async()=>{
     try{
       let household=store.household;
@@ -253,11 +260,11 @@ async function refresh(force=false){
       if(store.household?.id!==householdId||store.dataVersion!==version)return;
       phase2Ready=ready;store.household=household;store.purchases=purchases;store.items=items;store.loaded=true;
       $('home-display').textContent=household.name;$('invite-code').textContent=household.invite_code;
-      updateFilters();render();$('data-status').textContent=phase2Ready?'Compras actualizadas':'Compras actualizadas. Falta la migración de Fase 2 para guardar o editar compras.';
+      updateFilters();render();dataStatus(phase2Ready?'Compras actualizadas':'Compras actualizadas. Falta la migración de Fase 2 para guardar o editar compras.');
     }catch(error){
       if(store.household?.id===householdId&&store.dataVersion===version){
         store.loaded=hadSnapshot;
-        $('data-status').textContent='No se pudieron actualizar los datos. '+(hadSnapshot?'La información visible puede estar desactualizada. ':'')+'Pulsa Actualizar para reintentar.';
+        dataStatus('No se pudieron actualizar los datos. '+(hadSnapshot?'La información visible puede estar desactualizada. ':'')+'Pulsa Actualizar para reintentar.');
       }
       throw error;
     }finally{$('refresh-data-btn').disabled=false;}
@@ -266,14 +273,14 @@ async function refresh(force=false){
   try{await promise;}finally{if(loadTask===promise)loadTask=null;}
 }
 function navigate(page, resetScroll=true){
-  if(!['home','history','data'].includes(page))return;
+  if(!['home','history','data','settings'].includes(page))return;
   if(resetScroll)checkCalendar();
   store.page=page;
-  for(const name of ['home','history','data'])$(name+'-page').classList.toggle('hidden',name!==page);
+  for(const name of ['home','history','data','settings'])$(name+'-page').classList.toggle('hidden',name!==page);
   document.querySelectorAll('[data-page]').forEach(button=>{
     if(button.dataset.page===page)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   });
-  $('screen-heading').textContent={home:'Inicio',history:'Historial',data:'Data'}[page];
+  $('screen-heading').textContent={home:'Inicio',history:'Historial',data:'Data',settings:'Settings'}[page];
   if(resetScroll){document.querySelector?.('.shell')?.scrollTo({top:0});$('screen-heading').focus?.({preventScroll:true});}
 }
 function updateFilters(){
@@ -303,17 +310,18 @@ function render(){
   const spent=analytics.total(purchases),budget=analytics.cents(store.household.monthly_budget),remaining=budget-spent;
   $('period-heading').textContent=monthLabel(current);
   $('remaining').textContent=fmt(remaining/100);$('spent').textContent=fmt(spent/100);$('budget').textContent=fmt(budget/100);
-  const percentage=budget>0?Math.min(100,spent/budget*100):spent>0?100:0;
-  $('progress-bar').style.width=`${percentage}%`;
-  $('progress-bar').classList.toggle('over-budget',remaining<0);
-  $('budget-progress').setAttribute('aria-valuenow',String(Math.round(percentage)));
-  $('budget-progress').setAttribute('aria-valuetext',`${fmt(spent/100)} gastados de ${fmt(budget/100)}`);
+  const availability=analytics.remainingBudget(budget/100,spent/100);
+  $('settings-budget').textContent=fmt(budget/100);
+  $('progress-bar').style.width=`${availability.percentage}%`;
+  $('budget-progress').dataset.level=availability.level;
+  $('budget-zero').classList.toggle('hidden',!availability.zeroBudget);
+  $('budget-progress').setAttribute('aria-valuenow',String(Math.round(availability.percentage)));
+  $('budget-progress').setAttribute('aria-valuetext',`${availability.zeroBudget?'Sin presupuesto mensual. ':''}${fmt(remaining/100)} disponibles de ${fmt(budget/100)}; ${fmt(spent/100)} gastados`);
   $('budget-warning').classList.toggle('hidden',remaining>=0);
   const weekly=analytics.weekly(store.household.monthly_budget,store.purchases,today);
   $('weekly-amount').textContent=fmt(weekly.amount/100);
   const dateFormat={day:'numeric',month:'short'};
   $('weekly-period').textContent=`${weekly.from.toLocaleDateString('es-ES',dateFormat)} – ${weekly.to.toLocaleDateString('es-ES',dateFormat)} · ${weekly.daysThisWeek} días de este mes`;
-  $('recent-purchases').innerHTML=purchaseCards(purchases.slice(0,3));
   renderHistory();renderData();navigate(store.page,false);
 }
 function renderHistory(){
@@ -348,7 +356,7 @@ async function reloadAfterWrite(message){
   try{await refresh(true);notice(message);}
   catch{
     if(store.household?.id!==householdId||store.user?.id!==userId)return;
-    $('data-status').textContent=message+'. No se pudieron actualizar los datos del hogar; la información visible puede estar desactualizada. Pulsa Actualizar.';
+    dataStatus(message+'. No se pudieron actualizar los datos del hogar; la información visible puede estar desactualizada. Pulsa Actualizar.');
     notice(message+'. Actualización pendiente; no repitas la operación.');
   }
 }
@@ -455,6 +463,7 @@ function purchaseDetail(id){const p=store.purchases.find(x=>x.id===id);if(!p)ret
   const its=store.items.filter(i=>i.purchase_id===id);$('detail-items').innerHTML=its.length?its.map(i=>`<div class="detail-item"><span>${safe(i.name)} <span class="muted">×${safe(i.quantity)}</span></span><b>${fmt(i.line_total)}</b></div>`).join(''):'<p class="muted">Esta compra no tiene productos detallados.</p>';dialog('detail-dialog');
 }
 $('config-btn').onclick=openConfig;
+$('auth-config-btn').onclick=openConfig;
 $('config-cancel-btn').onclick=()=>route().catch(fail);
 $('restore-config-btn').onclick=()=>{
   if(!defaultConfig())return;
@@ -522,7 +531,6 @@ $('create-home-form').onsubmit=async e=>{e.preventDefault();try{const r=await st
 $('join-home-form').onsubmit=async e=>{e.preventDefault();try{const r=await store.client.rpc('join_my_household',{p_invite_code:$('join-code').value.trim()});if(r.error)throw r.error;await route();notice('Ya compartís hogar ✔');}catch(e){fail(e);}};
 $('logout-btn').onclick=async()=>{const r=await store.client.auth.signOut();if(r.error)fail(r.error);else{store.user=null;store.household=null;store.loaded=false;store.dataVersion++;store.purchases=[];store.items=[];resetDashboard();view('auth');}};
 document.querySelectorAll('[data-page]').forEach(button=>button.onclick=()=>navigate(button.dataset.page));
-$('see-history-btn').onclick=()=>navigate('history');
 $('add-menu-btn').onclick=()=>dialog('add-menu-dialog');
 $('refresh-data-btn').onclick=()=>refresh(true).catch(fail);
 for(const id of ['history-month','history-store'])$(id).onchange=()=>{if(id==='history-month')$(id).dataset.manual='true';store.historyLimit=50;renderHistory();};
@@ -534,7 +542,7 @@ $('new-budget-btn').onclick=()=>{$('budget-input').value=store.household.monthly
 $('add-item-btn').onclick=()=>addItem();
 $('purchase-form').onsubmit=savePurchase;
 $('budget-form').onsubmit=async e=>{e.preventDefault();try{const amount=Number($('budget-input').value);if(!Number.isFinite(amount)||amount<0)throw Error('Presupuesto inválido');const r=await store.client.from('households').update({monthly_budget:amount}).eq('id',store.household.id).select('monthly_budget').single();if(r.error)throw r.error;store.household.monthly_budget=r.data.monthly_budget;$('budget-dialog').close();render();notice('Presupuesto actualizado');}catch(err){fail(err);}};
-for(const id of ['purchases-list','recent-purchases'])$(id).onclick=e=>{const card=e.target.closest('[data-purchase]');if(card)purchaseDetail(card.dataset.purchase);};
+for(const id of ['purchases-list'])$(id).onclick=e=>{const card=e.target.closest('[data-purchase]');if(card)purchaseDetail(card.dataset.purchase);};
 $('delete-purchase').onclick=async()=>{
   const button=$('delete-purchase'),purchase=store.selected;
   if(button.disabled||!purchase||!confirm(`¿Eliminar la compra de ${purchase.store}?`))return;

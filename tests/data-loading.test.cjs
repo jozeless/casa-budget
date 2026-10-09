@@ -6,8 +6,8 @@ function mount(seed,initialDate){
  let clock=initialDate?new Date(initialDate).getTime():Date.now();
  class ClockDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
  const events={},timers=[],storage=new Map(),rows=[];
- const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',innerHTML:'',hidden:true,dataset:{},style:{},classList:{toggle(_name,value){node(id).hidden=value;},add(){},remove(){}},setAttribute(){},reset(){},close(){this.open=false;},showModal(){this.open=true;}});return nodes.get(id);};
- const buttons=['home','history','data'].map(name=>({dataset:{page:name},setAttribute(){},removeAttribute(){}}));
+ const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',innerHTML:'',hidden:true,dataset:{},style:{},classList:{toggle(_name,value){node(id).hidden=value;},add(){},remove(){}},attributes:{},setAttribute(name,value){this.attributes[name]=value;},reset(){},close(){this.open=false;},showModal(){this.open=true;}});return nodes.get(id);};
+ const buttons=['home','history','data','settings'].map(name=>({dataset:{page:name},setAttribute(){},removeAttribute(){}}));
  const context={Date:ClockDate,confirm(){return true;},Intl,URLSearchParams,Number,String,Map,Set,Math,Promise,JSON,setTimeout,clearTimeout,queueMicrotask,navigator:{},history:{replaceState(){}},location:{hash:'',search:''},document:{addEventListener(name,fn){events[name]=fn;},getElementById:node,querySelectorAll(selector){return selector==='[data-page]'?buttons:selector==='#items-container .item-row'?rows:[];}},localStorage:{getItem(key){return storage.get(key)||null;},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},window:{crypto:require('node:crypto').webcrypto,setTimeout(fn,delay){timers.push({fn,delay});return timers.length;},clearTimeout(){},addEventListener(name,fn){events[name]=fn;},CASA_BUDGET:budget,CASA_CONFIG:{supabaseUrl:'https://test.supabase.co',supabaseAnonKey:'sb_publishable_test'}}};
  vm.createContext(context);vm.runInContext('('+installMock.toString()+')('+JSON.stringify(seed)+')',context);vm.runInContext(app,context);
  return {node,buttons,mock:context.window.mock,events,timers,rows,reload(){vm.runInContext(app,context);},setDate(date){clock=new Date(date).getTime();}};
@@ -15,7 +15,7 @@ function mount(seed,initialDate){
 const current=new Date();const month=budget.monthKey(current);const purchases=count=>Array.from({length:count},(_,index)=>({id:'p'+String(index).padStart(4,'0'),household_id:'test-home',store:'Jumbo',purchased_on:month+'-01',total:1,created_at:'2026-01-01'}));
 test('concurrent auth/start routing loads household and purchases only once; tabs do not query',async()=>{
  const ui=mount({purchases:purchases(5)});await settle();assert.equal(ui.mock.calls.filter(c=>c.table==='household_members').length,1);assert.equal(ui.mock.calls.filter(c=>c.table==='purchases').length,1);
- const before=ui.mock.calls.length;for(const button of ui.buttons)button.onclick();assert.equal(ui.mock.calls.length,before);assert.equal(ui.node('screen-heading').textContent,'Data');
+ const before=ui.mock.calls.length;for(const button of ui.buttons)button.onclick();assert.equal(ui.mock.calls.length,before);assert.equal(ui.node('screen-heading').textContent,'Settings');
 });
 test('all purchase pages and product pages are loaded; history shows more without more queries',async()=>{
  const rows=purchases(450),items=rows.flatMap(p=>Array.from({length:3},(_,index)=>({id:p.id+'i'+index,purchase_id:p.id,name:'Café',line_total:1,quantity:1})));
@@ -136,4 +136,14 @@ test('product history loads more than one page, initially selected month, then a
 
 test('missing migration keeps phase one data readable and explains unavailable writes',async()=>{
  const ui=mount({noMigration:true,purchases:[fixture('one',month+'-01',20)]});await settle();assert.match(ui.node('spent').textContent,/20/);assert.match(ui.node('data-status').textContent,/Falta la migración/);form(ui);await submit(ui);assert.equal(ui.mock.data.purchases.length,1);assert.match(ui.node('toast').textContent,/Falta aplicar la migración/);
+});
+
+for(const [limit,spent,percentage,level] of [[100,0,100,'high'],[100,40,60,'medium'],[100,70,30,'low'],[100,100,0,'low'],[100,125,0,'low'],[0,0,0,'low'],[0,20,0,'low']])test(`remaining bar: budget ${limit}, spent ${spent}`,async()=>{
+ const ui=mount({budget:limit,purchases:spent?[fixture('one',month+'-01',spent)]:[]});await settle();
+ assert.equal(ui.node('progress-bar').style.width,percentage+'%');assert.equal(ui.node('budget-progress').dataset.level,level);assert.equal(ui.node('budget-progress').attributes['aria-valuenow'],String(percentage));assert.match(ui.node('budget-progress').attributes['aria-valuetext'],/disponibles/);assert.equal(ui.node('budget-zero').hidden,limit!==0);
+});
+test('all four views share data and Settings budget follows remote refresh',async()=>{
+ const ui=mount({budget:100,purchases:[fixture('one',month+'-01',20)]});await settle();const before=ui.mock.calls.length;
+ for(const button of ui.buttons){button.onclick();assert.equal(ui.node('screen-heading').textContent,{home:'Inicio',history:'Historial',data:'Data',settings:'Settings'}[button.dataset.page]);assert.equal(ui.node(button.dataset.page+'-page').hidden,false);}
+ assert.equal(ui.mock.calls.length,before);ui.mock.data.household.monthly_budget=200;await ui.node('refresh-data-btn').onclick();assert.match(ui.node('settings-budget').textContent,/200/);assert.equal(ui.node('progress-bar').style.width,'90%');
 });

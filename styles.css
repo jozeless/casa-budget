@@ -11,6 +11,9 @@
   --muted: #A9B4D0;
   --danger: #FFABA5;
   --warning: #FFD6A5;
+  --budget-high: #3DDC97;
+  --budget-medium: #FFB84D;
+  --budget-low: #FF6B7A;
   --font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --space-xs: 4px;
   --space-sm: 8px;
@@ -82,8 +85,11 @@ input:focus, select:focus { border-color: var(--accent); }
 .summary-bottom { font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 .summary-bottom strong { color: var(--text); margin-left: 5px; }
 .progress { height: 8px; border-radius: 8px; background: var(--surface2); overflow: hidden; margin: var(--space-md) 0 8px; }
-.progress > div { height: 100%; width: 0; background: var(--blue); transition: width .2s; }
-.progress > div.over-budget { background: var(--danger); }
+.progress > div { height: 100%; width: 0; background: var(--blue); transition: width .2s, background-color .2s; }
+.progress[data-level="high"] > div { background: var(--budget-high); }
+.progress[data-level="medium"] > div { background: var(--budget-medium); }
+.progress[data-level="low"] > div { background: var(--budget-low); }
+.progress[data-level="low"] { box-shadow: inset 0 0 0 1px var(--budget-low); }
 .warning { font-size: 12px; color: var(--warning); }
 .weekly-card h2 { margin-top: 12px; }
 .weekly-amount { display: block; font-size: 32px; margin: 16px 0; color: var(--accent); }
@@ -127,11 +133,11 @@ input:focus, select:focus { border-color: var(--accent); }
 .detail-item { display: flex; justify-content: space-between; gap: 12px; border-bottom: var(--border-width) solid var(--line); padding-bottom: 12px; }
 .detail-item > span { min-width: 0; overflow-wrap: anywhere; }
 .detail-bottom { border-top: var(--border-width) solid var(--line); padding-top: var(--space-md); }
-.bottom-nav { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 10; width: min(100%, 620px); height: calc(var(--nav-height) + var(--safe-bottom)); padding: 8px 12px calc(8px + var(--safe-bottom)); display: grid; grid-template-columns: repeat(3, 1fr); border: var(--border-width) solid var(--line); background: var(--surface); border-radius: var(--radius-md) var(--radius-md) 0 0; }
+.bottom-nav { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; z-index: 10; width: min(100%, 620px); height: calc(var(--nav-height) + var(--safe-bottom)); padding: 8px 12px calc(8px + var(--safe-bottom)); display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: var(--border-width) solid var(--line); background: var(--surface); border-radius: var(--radius-md) var(--radius-md) 0 0; }
 .bottom-nav button { border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); font-size: 20px; min-height: 48px; }
 .bottom-nav button span { display: block; font-size: 12px; margin-top: 3px; }
 .bottom-nav button[aria-current="page"] { color: var(--text); background: var(--surface2); }
-.nav-spacer { display: none; }
+.nav-spacer { display: block; }
 .fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-height) + 12px + var(--safe-bottom)); width: var(--fab-size); height: var(--fab-size); z-index: 11; background: var(--blue); color: var(--text); border: 2px solid var(--bg); border-radius: 50%; font-size: 32px; line-height: 1; }
 .fab:hover { background: var(--purple); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--navigation-clearance) + 8px); z-index: 20; background: var(--surface2); border: var(--border-width) solid var(--accent); color: var(--text); border-radius: var(--radius-sm); padding: 14px 18px; width: max-content; max-width: 90vw; font-size: 13px; }
@@ -168,3 +174,9 @@ code { color: var(--accent); }
 
 .product-link .report-meter,.product-link .report-meter > span { display:block; }
 .product-link .report-meter > span { height:100%; background:var(--purple); }
+
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+.compact-header { justify-content:space-between; }
+#settings-page > .panel + .panel { margin-top:var(--space-md); }
+#settings-page .code-row { flex-wrap:wrap; }
+#settings-page code { overflow-wrap:anywhere; min-width:0; }
