@@ -9,6 +9,15 @@ const store = {client:null,user:null,household:null,purchases:[],items:[],select
 const analytics=window.CASA_BUDGET;
 let loadTask=null;
 let routeTask=null;
+let editingPurchase=null;
+let phase2Ready=true;
+let productRows=[],productName='',productEpoch=0;
+const pendingKey=()=>`casa_pending_purchase_${store.user?.id}_${store.household?.id}`;
+function pendingWrite(){return JSON.parse(localStorage.getItem(pendingKey())||'null');}
+function phaseError(error){
+  if(error?.code==='PGRST202'||error?.code==='42703')return 'Falta aplicar la migración de Fase 2 en Supabase. Contacta con quien administra CASA.';
+  return error?.message||'No se pudo conectar. Intenta nuevamente.';
+}
 let renderedDate=null;
 let calendarTimer;
 function checkCalendar(){
@@ -32,7 +41,7 @@ function resetDashboard(){
     $(id).value='';if($(id).dataset){delete $(id).dataset.initialized;delete $(id).dataset.manual;delete $(id).dataset.currentMonth;}
   }
   store.page='home';store.historyLimit=50;
-  for(const id of ['purchase-dialog','detail-dialog','budget-dialog','add-menu-dialog'])if($(id).open)$(id).close();
+  for(const id of ['purchase-dialog','detail-dialog','budget-dialog','add-menu-dialog','product-dialog','duplicate-dialog'])if($(id).open)$(id).close();
 }
 const view = name => {
   ['setup','auth','recovery','home-setup','dashboard'].forEach(v=>$(v+'-view').classList.toggle('hidden',v!==name));
@@ -229,16 +238,22 @@ async function refresh(force=false){
         if(!result.data)throw Error('No se pudo consultar el presupuesto del hogar.');
         household=result.data;
       }
-      const purchases=await paged(()=>store.client.from('purchases').select('id,store,purchased_on,total,created_at').eq('household_id',householdId).order('purchased_on',{ascending:false}).order('created_at',{ascending:false}).order('id',{ascending:false}));
+      const purchaseQuery=columns=>store.client.from('purchases').select(columns).eq('household_id',householdId).order('purchased_on',{ascending:false}).order('created_at',{ascending:false}).order('id',{ascending:false});
+      let purchases,ready=true;
+      try{purchases=await paged(()=>purchaseQuery('id,store,purchased_on,total,created_at,revision'));}
+      catch(error){
+        if(error.code!=='42703')throw error;
+        ready=false;purchases=await paged(()=>purchaseQuery('id,store,purchased_on,total,created_at'));
+      }
       const items=[];
       for(let index=0;index<purchases.length;index+=100){
         const ids=purchases.slice(index,index+100).map(p=>p.id);
         items.push(...await paged(()=>store.client.from('purchase_items').select('id,purchase_id,name,quantity,line_total').in('purchase_id',ids).order('id',{ascending:true})));
       }
       if(store.household?.id!==householdId||store.dataVersion!==version)return;
-      store.household=household;store.purchases=purchases;store.items=items;store.loaded=true;
+      phase2Ready=ready;store.household=household;store.purchases=purchases;store.items=items;store.loaded=true;
       $('home-display').textContent=household.name;$('invite-code').textContent=household.invite_code;
-      updateFilters();render();$('data-status').textContent='Compras actualizadas';
+      updateFilters();render();$('data-status').textContent=phase2Ready?'Compras actualizadas':'Compras actualizadas. Falta la migración de Fase 2 para guardar o editar compras.';
     }catch(error){
       if(store.household?.id===householdId&&store.dataVersion===version){
         store.loaded=hadSnapshot;
@@ -313,14 +328,18 @@ function renderData(){
   const purchases=analytics.inMonth(store.purchases,$('data-month').value),ids=new Set(purchases.map(p=>p.id));
   const byStore=new Map(),byProduct=new Map();
   purchases.forEach(p=>byStore.set(p.store.trim(),(byStore.get(p.store.trim())||0)+analytics.cents(p.total)));
-  store.items.filter(item=>ids.has(item.purchase_id)).forEach(item=>{const name=item.name.trim().toLocaleLowerCase('es');byProduct.set(name,(byProduct.get(name)||0)+analytics.cents(item.line_total));});
+  store.items.filter(item=>ids.has(item.purchase_id)).forEach(item=>{const name=analytics.productKey(item.name);byProduct.set(name,(byProduct.get(name)||0)+analytics.cents(item.line_total));});
   report('store-report',[...byStore].sort((a,b)=>b[1]-a[1]),'No hay gastos por supermercado en este mes.');
   report('product-report',[...byProduct].sort((a,b)=>b[1]-a[1]),'No hay productos detallados en este mes.');
   report('monthly-report',analytics.evolution(store.purchases).map(m=>[monthLabel(m.month),m.total]),'');
 }
 function report(id,list,empty){
-  const max=Math.max(1,...list.map(([,value])=>value));
-  $(id).innerHTML=list.length?list.map(([name,value])=>`<div><div class="report-line"><span>${safe(name)}</span><b>${fmt(value/100)}</b></div><div class="report-meter" aria-hidden="true"><div style="width:${value>0?Math.max(2,value/max*100):0}%"></div></div></div>`).join(''):`<p class="muted">${empty}</p>`;
+  const max=list.reduce((value,[,amount])=>Math.max(value,amount),1);
+  $(id).innerHTML=list.length?list.map(([name,value])=>{
+    const product=id==='product-report',tag=product?'span':'div';
+    const content=`<${tag} class="report-line"><span>${safe(name)}</span><b>${fmt(value/100)}</b></${tag}><${tag} class="report-meter" aria-hidden="true"><${tag} style="width:${value>0?Math.max(2,value/max*100):0}%"></${tag}></${tag}>`;
+    return product?`<button type="button" class="product-link" data-product="${safe(name)}">${content}</button>`:`<div>${content}</div>`;
+  }).join(''):`<p class="muted">${empty}</p>`;
 }
 function addItem(name='',qty='1',total=''){const row=document.createElement('div');row.className='item-row';row.innerHTML=`<input class="item-name" aria-label="Producto" maxlength="120" required placeholder="Producto" value="${safe(name)}"><input class="item-qty" aria-label="Cantidad" type="number" min="0.01" step="0.01" required value="${safe(qty)}"><input class="item-total" aria-label="Subtotal del producto" type="number" min="0" step="0.01" required placeholder="€ total" value="${safe(total)}"><button type="button" class="remove-item" aria-label="Quitar producto">×</button>`;row.querySelector('button').onclick=()=>row.remove();$('items-container').appendChild(row);}
 function dialog(id){$(id).showModal();}
@@ -333,23 +352,104 @@ async function reloadAfterWrite(message){
     notice(message+'. Actualización pendiente; no repitas la operación.');
   }
 }
-async function savePurchase(ev){ev.preventDefault();const btn=$('save-purchase');if(btn.disabled)return;btn.disabled=true;
-  const householdId=store.household?.id,userId=store.user?.id;
-  try{const total=Number($('purchase-total').value),storeName=$('purchase-store').value.trim(),date=$('purchase-date').value;
-    if(!storeName||!date||!Number.isFinite(total)||total<=0)throw Error('Completa supermercado, fecha e importe positivo.');
-    const items=[...document.querySelectorAll('#items-container .item-row')].map(row=>({name:row.querySelector('.item-name').value.trim(),quantity:Number(row.querySelector('.item-qty').value),line_total:Number(row.querySelector('.item-total').value)}));
-    if(items.some(i=>!i.name||i.name.length>120||!Number.isFinite(i.quantity)||i.quantity<=0||!Number.isFinite(i.line_total)||i.line_total<0))throw Error('Revisa los productos y sus precios.');
-    if(items.length && Math.round(items.reduce((n,i)=>n+i.line_total,0)*100)!==Math.round(total*100))throw Error('La suma de productos debe coincidir con el total del recibo.');
-    const r=await store.client.from('purchases').insert({household_id:store.household.id,created_by:store.user.id,store:storeName,purchased_on:date,total}).select('id,created_at').single();if(r.error)throw r.error;
-    if(items.length){const ir=await store.client.from('purchase_items').insert(items.map(i=>({...i,purchase_id:r.data.id})));if(ir.error){await store.client.from('purchases').delete().eq('id',r.data.id);throw Error('No se pudieron guardar los productos. Revisa y repite la compra.');}}
-    if(store.household?.id!==householdId||store.user?.id!==userId)return;
-    store.purchases.unshift({id:r.data.id,store:storeName,purchased_on:date,total,created_at:r.data.created_at});
-    store.purchases.sort((a,b)=>b.purchased_on.localeCompare(a.purchased_on)||b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id));
-    store.items.push(...items.map(i=>({...i,purchase_id:r.data.id})));
-    updateFilters();render();
-    $('purchase-dialog').close();$('purchase-form').reset();$('items-container').innerHTML='';await reloadAfterWrite('Compra guardada ✔');
-  }catch(e){fail(e);}finally{btn.disabled=false;}
+function duplicateApproval(){
+  return new Promise(resolve=>{
+    const box=$('duplicate-dialog');
+    const finish=value=>{box.close();resolve(value);};
+    $('duplicate-cancel').onclick=()=>finish(false);$('duplicate-save').onclick=()=>finish(true);
+    box.oncancel=event=>{event.preventDefault();finish(false);};box.showModal();
+  });
 }
+function openPurchase(purchase=null){
+  const pending=pendingWrite();editingPurchase=purchase;
+  $('purchase-form').reset();$('items-container').innerHTML='';
+  let rows=[];
+  if(pending){
+    const params=pending.params;
+    if(params.p_purchase_id&&purchase?.id!==params.p_purchase_id){notice('Hay una edición pendiente. Abre esa compra para reintentar.');return;}
+    if(!params.p_purchase_id&&purchase){notice('Hay una compra nueva pendiente. Pulsa + para reintentar.');return;}
+    $('purchase-store').value=params.p_store;$('purchase-date').value=params.p_date;$('purchase-total').value=params.p_total;rows=params.p_items;
+    $('purchase-title').textContent='Reintentar operación pendiente';
+  }else{
+    $('purchase-store').value=purchase?.store||'';$('purchase-date').value=purchase?.purchased_on||dateLocal();$('purchase-total').value=purchase?.total||'';
+    rows=purchase?store.items.filter(item=>item.purchase_id===purchase.id):[];
+    $('purchase-title').textContent=purchase?'Editar compra':'Registrar compra';
+  }
+  rows.forEach(item=>addItem(item.name,item.quantity,item.line_total));
+  $('save-purchase').textContent=pending?'Reintentar guardado':purchase?'Guardar cambios':'Guardar compra';
+  dialog('purchase-dialog');
+}
+async function savePurchase(ev){
+  ev.preventDefault();const btn=$('save-purchase');if(btn.disabled)return;btn.disabled=true;
+  const householdId=store.household?.id,userId=store.user?.id,key=pendingKey();let operation;
+  try{
+    if(!phase2Ready)throw Error('Falta aplicar la migración de Fase 2 en Supabase para guardar o editar compras.');
+    const total=Number($('purchase-total').value),storeName=$('purchase-store').value.trim(),date=$('purchase-date').value;
+    if(!storeName||storeName.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(total)||total<=0||total>9999999999.99||Math.abs(total*100-Math.round(total*100))>0.00001)throw Error('Completa supermercado, fecha e importe positivo.');
+    const items=[...document.querySelectorAll('#items-container .item-row')].map(row=>({name:row.querySelector('.item-name').value.trim(),quantity:Number(row.querySelector('.item-qty').value),line_total:Number(row.querySelector('.item-total').value)}));
+    if(items.some(i=>!i.name||i.name.length>120||!Number.isFinite(i.quantity)||i.quantity<=0||i.quantity>9999999.99||Math.abs(i.quantity*100-Math.round(i.quantity*100))>0.00001||!Number.isFinite(i.line_total)||i.line_total<0||i.line_total>9999999999.99||Math.abs(i.line_total*100-Math.round(i.line_total*100))>0.00001))throw Error('Revisa los productos y sus precios.');
+    if(items.length&&items.reduce((n,i)=>n+analytics.cents(i.line_total),0)!==analytics.cents(total))throw Error('La suma de productos debe coincidir con el total del recibo.');
+    const payload={p_household_id:householdId,p_purchase_id:editingPurchase?.id||null,p_expected_revision:editingPurchase?.revision??null,p_store:storeName,p_date:date,p_total:total,p_items:items};
+    operation=pendingWrite();
+    if(operation){
+      const {p_operation_id,...original}=operation.params;
+      // A lost response must be retried with exactly the original request, even after reload.
+      if(JSON.stringify({...payload,p_expected_revision:original.p_expected_revision})!==JSON.stringify(original))throw Error('Hay un guardado pendiente. Reintenta con los datos originales antes de cambiarlos.');
+    }else{
+      if(!editingPurchase){
+        const candidates=await paged(()=>store.client.from('purchases').select('id,store,total').eq('household_id',householdId).eq('purchased_on',date).eq('total',total).order('id'));
+        if(candidates.some(p=>analytics.productKey(p.store)===analytics.productKey(storeName))&&!await duplicateApproval())return;
+      }
+      operation={params:{...payload,p_operation_id:window.crypto.randomUUID()}};
+      // Persist before sending; if storage fails, do not risk an untrackable write.
+      localStorage.setItem(key,JSON.stringify(operation));
+    }
+    const result=await store.client.rpc('casa_save_purchase',operation.params);
+    if(result.error){
+      if(['42501','40001','P0001','PGRST202'].includes(result.error.code)||/^(22|23)/.test(result.error.code||''))localStorage.removeItem(key);
+      if(result.error.code==='40001')await refresh(true).catch(()=>{});
+      throw result.error;
+    }
+    const saved=result.data;
+    localStorage.removeItem(key);
+    if(store.household?.id!==householdId||store.user?.id!==userId)return;
+    store.purchases=store.purchases.filter(p=>p.id!==saved.purchase.id);store.purchases.push(saved.purchase);
+    store.purchases.sort((a,b)=>b.purchased_on.localeCompare(a.purchased_on)||b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id));
+    store.items=store.items.filter(i=>i.purchase_id!==saved.purchase.id).concat(saved.items);
+    productEpoch++;updateFilters();render();
+    $('purchase-dialog').close();$('purchase-form').reset();$('items-container').innerHTML='';editingPurchase=null;
+    await reloadAfterWrite(payload.p_purchase_id?'Compra actualizada ✔':'Compra guardada ✔');
+  }catch(error){
+    notice(phaseError(error)+(operation&&localStorage.getItem(key)?' Guardado pendiente: reintenta; no registres otra compra.':''));
+  }finally{btn.disabled=false;}
+}
+async function loadProductHistory(){
+  const name=productName,householdId=store.household?.id,userId=store.user?.id,epoch=++productEpoch;
+  productRows=[];
+  $('product-status').textContent='Cargando historial…';$('product-retry').disabled=true;
+  $('product-summary').textContent='';$('product-history').innerHTML='';
+  try{
+    const rows=await paged(()=>store.client.rpc('casa_product_history',{p_household_id:householdId,p_name:name}).order('purchased_on',{ascending:false}).order('purchase_id').order('id'));
+    if(epoch!==productEpoch||store.household?.id!==householdId||store.user?.id!==userId)return;
+    productRows=rows;const previous=$('product-month').value;
+    const months=[...new Set([...(previous?[previous]:[]),...rows.map(r=>r.purchased_on.slice(0,7))])].sort().reverse();
+    $('product-month').innerHTML='<option value="">Todo</option>'+months.map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');$('product-month').value=previous;
+    $('product-status').textContent='Historial actualizado';renderProductHistory();
+  }catch(error){if(epoch===productEpoch)$('product-status').textContent=phaseError(error);}
+  finally{if(epoch===productEpoch)$('product-retry').disabled=false;}
+}
+function renderProductHistory(){
+  const report=analytics.productHistory(productRows,$('product-month').value);
+  $('product-summary').textContent=`${fmt(report.total/100)} · ${report.count} compras`;
+  $('product-history').innerHTML=report.lines.length?report.lines.map(row=>`<div class="product-entry"><b>${safe(row.name)}</b><p>${safe(row.purchased_on)} · ${safe(row.store)}</p><p>Cantidad: ${safe(row.quantity)} · Importe pagado: ${fmt(row.line_total)}</p><button type="button" class="secondary" data-original="${row.purchase_id}">Ver compra original</button></div>`).join(''):'<p class="muted">No hay registros para este periodo.</p>';
+}
+$('product-report').onclick=event=>{const button=event.target.closest('[data-product]');if(!button)return;productName=button.dataset.product;$('product-title').textContent=productName;$('product-month').innerHTML=`<option value="${$('data-month').value}">${monthLabel($('data-month').value)}</option>`;$('product-month').value=$('data-month').value;dialog('product-dialog');loadProductHistory();};
+$('product-month').onchange=renderProductHistory;$('product-retry').onclick=loadProductHistory;
+$('product-history').onclick=async event=>{
+  const button=event.target.closest('[data-original]');if(!button)return;
+  try{await refresh(true);if(!store.purchases.some(p=>p.id===button.dataset.original))throw Error('Esta compra ya no está disponible.');$('product-dialog').close();purchaseDetail(button.dataset.original);}catch(error){notice(phaseError(error));}
+};
+$('edit-purchase').onclick=()=>{try{$('detail-dialog').close();openPurchase(store.selected);}catch(error){notice(phaseError(error));}};
 function purchaseDetail(id){const p=store.purchases.find(x=>x.id===id);if(!p)return;store.selected=p;
   $('detail-title').textContent=p.store;$('detail-subtitle').textContent=new Date(p.purchased_on+'T12:00:00').toLocaleDateString('es-ES',{dateStyle:'long'});$('detail-total').textContent=fmt(p.total);
   const its=store.items.filter(i=>i.purchase_id===id);$('detail-items').innerHTML=its.length?its.map(i=>`<div class="detail-item"><span>${safe(i.name)} <span class="muted">×${safe(i.quantity)}</span></span><b>${fmt(i.line_total)}</b></div>`).join(''):'<p class="muted">Esta compra no tiene productos detallados.</p>';dialog('detail-dialog');
@@ -429,7 +529,7 @@ for(const id of ['history-month','history-store'])$(id).onchange=()=>{if(id==='h
 $('history-search').oninput=()=>{store.historyLimit=50;renderHistory();};
 $('data-month').onchange=()=>{$('data-month').dataset.manual='true';renderData();};
 $('history-more-btn').onclick=()=>{store.historyLimit+=50;renderHistory();};
-$('new-purchase-btn').onclick=()=>{$('add-menu-dialog').close();$('purchase-form').reset();$('purchase-date').value=dateLocal();$('items-container').innerHTML='';dialog('purchase-dialog');};
+$('new-purchase-btn').onclick=()=>{try{$('add-menu-dialog').close();openPurchase();}catch(error){notice(phaseError(error));}};
 $('new-budget-btn').onclick=()=>{$('budget-input').value=store.household.monthly_budget;dialog('budget-dialog');};
 $('add-item-btn').onclick=()=>addItem();
 $('purchase-form').onsubmit=savePurchase;
@@ -444,7 +544,7 @@ $('delete-purchase').onclick=async()=>{
     const r=await store.client.from('purchases').delete().eq('id',purchase.id);if(r.error)throw r.error;
     if(store.household?.id!==householdId||store.user?.id!==userId)return;
     store.purchases=store.purchases.filter(p=>p.id!==purchase.id);
-    store.items=store.items.filter(i=>i.purchase_id!==purchase.id);store.selected=null;
+    store.items=store.items.filter(i=>i.purchase_id!==purchase.id);store.selected=null;productEpoch++;
     updateFilters();render();$('detail-dialog').close();await reloadAfterWrite('Compra eliminada');
   }catch(e){fail(e);}finally{button.disabled=false;}
 };

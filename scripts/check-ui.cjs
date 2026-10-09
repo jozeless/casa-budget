@@ -1,5 +1,6 @@
 // Run with Playwright installed: node scripts/check-ui.cjs
 // Serves the checkout locally; all Auth and database operations use in-memory fixtures.
+process.env.TZ=process.env.TZ||'Europe/Amsterdam';
 const http=require('node:http');
 const fs=require('node:fs');
 const path=require('node:path');
@@ -24,7 +25,7 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
  let cases=0;
  try{
  async function open(width,height,seed,clock){
-   const context=await browser.newContext({viewport:{width,height}});let remote=0;const errors=[];
+   const context=await browser.newContext({viewport:{width,height},timezoneId:Intl.DateTimeFormat().resolvedOptions().timeZone});let remote=0;const errors=[];
    await context.addInitScript(installMock,seed);
    await context.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'text/javascript',body:'/* Auth supplied by test fixture */'}));
    await context.route('https://*.supabase.co/**',route=>{remote++;return route.abort();});
@@ -81,7 +82,7 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
  await page.locator('#new-budget-btn').click();await page.locator('#budget-input').fill('150');await page.locator('#budget-form button[type=submit]').click();await page.locator('#budget-dialog').waitFor({state:'hidden'});assert.match(await page.locator('#remaining').textContent(),/130/);
  // Installed shell includes the new helper and survives a network failure.
  await page.evaluate(()=>navigator.serviceWorker.ready);await page.reload();await page.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');
- assert(await page.evaluate(async()=>{const cache=await caches.open('casa-shell-v4-framework-sync');return !!(await cache.match('./budget.js'));}));
+ assert(await page.evaluate(async()=>{const cache=await caches.open('casa-shell-v5-phase2');return !!(await cache.match('./budget.js'));}));
  await ui.context.setOffline(true);assert.match(await page.evaluate(async()=>await (await fetch('./budget.js')).text()),/Pure calendar/);await ui.context.setOffline(false);
  await page.locator('#logout-btn').click();await page.locator('#auth-view').waitFor({state:'visible'});assert(!await page.locator('#app-nav').isVisible());assert(!await page.locator('#add-menu-btn').isVisible());
  await page.locator('#auth-email').fill('test@example.com');await page.locator('#auth-password').fill('synthetic-password');
@@ -112,7 +113,7 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
    assert.equal(calendar.remote,0);assert.deepEqual(calendar.errors,[]);await calendar.context.close();
    const stale=await open(width,844,normal),p=stale.page;
    await p.locator('#add-menu-btn').click();await p.locator('#new-purchase-btn').click();await p.locator('#purchase-store').fill('Aldi');await p.locator('#purchase-total').fill('10');
-   await p.evaluate(()=>mock.seed.failRead=true);await p.locator('#save-purchase').click();await p.locator('#purchase-dialog').waitFor({state:'hidden'});
+   await p.evaluate(()=>mock.seed.failReadAfterWrite=true);await p.locator('#save-purchase').click();await p.locator('#purchase-dialog').waitFor({state:'hidden'});
    await p.waitForFunction(()=>document.getElementById('data-status').textContent.includes('Compra guardada'));
    assert.match(await p.locator('#spent').textContent(),/30/);assert.match(await p.locator('#toast').textContent(),/no repitas/);
    await p.locator('[data-page=history]').click();await p.locator('#history-search').fill('Aldi');await p.locator('#purchases-list [data-purchase]').click();await p.locator('#delete-purchase').click();
@@ -121,6 +122,32 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
    await p.evaluate(()=>mock.seed.failRead=false);await p.locator('#refresh-data-btn').click();await p.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');
    assert.equal(await p.evaluate(()=>mock.data.purchases.length),2);assert.equal(stale.remote,0);assert.deepEqual(stale.errors,[]);await stale.context.close();
  }
- console.log(cases+' responsive scenarios passed; filters, real-value reports, safe navigation, shared reads, simulated insert/delete/budget/login/logout, PWA cache, calendar rollover, shared budgets and post-write read failures passed. No live Supabase calls.');
+ // Phase 2 editing, duplicate warnings, uncertain responses and full product history.
+ for(const width of [320,1280]){
+  const editing=await open(width,width===320?568:844,normal),p=editing.page;
+  await p.locator('#recent-purchases [data-purchase]').click();await p.locator('#edit-purchase').click();
+  assert.equal(await p.locator('.item-name').inputValue(),'Café');assert(await p.evaluate(()=>{const box=document.getElementById('purchase-dialog');const rect=box.getBoundingClientRect();return rect.top>=0&&rect.bottom<=innerHeight+1&&box.scrollWidth<=box.clientWidth;}));
+  if(width===320)await p.screenshot({path:'/tmp/casa-phase2-edit-mobile.png'});await p.locator('#purchase-store').fill('Plus');await p.locator('.item-qty').fill('2');await p.locator('.item-total').fill('25');await p.locator('#purchase-total').fill('30');
+  await p.locator('#add-item-btn').click();await p.locator('.item-name').last().fill('Leche');await p.locator('.item-total').last().fill('5');
+  await p.locator('#save-purchase').click();await p.locator('#purchase-dialog').waitFor({state:'hidden'});await p.waitForFunction(()=>document.getElementById('spent').textContent.includes('30'));
+  assert.equal(await p.evaluate(()=>mock.data.purchases.length),2);assert.equal(await p.evaluate(()=>mock.data.items.length),2);
+  await p.locator('#recent-purchases [data-purchase]').click();await p.locator('#edit-purchase').click();await p.locator('.remove-item').last().click();await p.locator('#purchase-total').fill('25');await p.locator('#save-purchase').click();await p.locator('#purchase-dialog').waitFor({state:'hidden'});await p.waitForFunction(()=>document.getElementById('spent').textContent.includes('25'));
+  assert.equal(await p.evaluate(()=>mock.data.items.length),1);assert.equal(await p.evaluate(()=>mock.data.purchases.find(p=>p.id==='current').store),'Plus');
+  // A second member edits the same purchase while this form is open.
+  await p.locator('#recent-purchases [data-purchase]').click();await p.locator('#edit-purchase').click();await p.evaluate(()=>mock.data.purchases.find(p=>p.id==='current').revision++);await p.locator('#save-purchase').click();await p.waitForFunction(()=>document.getElementById('toast').textContent.includes('compra cambió'));assert(await p.locator('#purchase-dialog').isVisible());await p.locator('[data-close=purchase-dialog]').click();
+  assert.equal(editing.remote,0);assert.deepEqual(editing.errors,[]);await editing.context.close();
+  const duplicate=await open(width,width===320?568:844,normal),d=duplicate.page;
+  await d.locator('#add-menu-btn').click();await d.locator('#new-purchase-btn').click();await d.locator('#purchase-store').fill('Jumbo');await d.locator('#purchase-date').fill(month+'-01');await d.locator('#purchase-total').fill('20');await d.locator('#save-purchase').click();await d.locator('#duplicate-dialog').waitFor({state:'visible'});await d.locator('#duplicate-cancel').click();assert.equal(await d.evaluate(()=>mock.data.purchases.length),2);
+  await d.locator('#save-purchase').click();await d.locator('#duplicate-save').click();await d.locator('#purchase-dialog').waitFor({state:'hidden'});assert.equal(await d.evaluate(()=>mock.data.purchases.length),3);assert.equal(duplicate.remote,0);assert.deepEqual(duplicate.errors,[]);await duplicate.context.close();
+  const uncertain=await open(width,width===320?568:844,{purchases:[],loseResponse:true}),u=uncertain.page;
+  await u.locator('#add-menu-btn').click();await u.locator('#new-purchase-btn').click();await u.locator('#purchase-store').fill('Aldi');await u.locator('#purchase-total').fill('10');await u.locator('#save-purchase').click();await u.waitForFunction(()=>document.getElementById('toast').textContent.includes('Guardado pendiente'));assert.equal(await u.evaluate(()=>mock.data.purchases.length),1);await u.locator('#save-purchase').click();await u.locator('#purchase-dialog').waitFor({state:'hidden'});assert.equal(await u.evaluate(()=>mock.data.purchases.length),1);assert.equal(uncertain.remote,0);assert.deepEqual(uncertain.errors,[]);await uncertain.context.close();
+  const rows=Array.from({length:250},(_,i)=>purchase('p'+i,i<100?month+'-01':lastMonth+'-01',1));
+  const product=await open(width,width===320?568:844,{purchases:rows,items:rows.map((p,i)=>({id:'i'+i,purchase_id:p.id,name:i%2?' Café ':'CAFÉ',quantity:1,line_total:1}))}),h=product.page;
+  await h.locator('[data-page=data]').click();await h.locator('[data-product="café"]').click();await h.waitForFunction(()=>document.getElementById('product-status').textContent==='Historial actualizado');assert.match(await h.locator('#product-summary').textContent(),/100 compras/);if(width===320)await h.screenshot({path:'/tmp/casa-phase2-product-mobile.png'});
+  await h.locator('#product-month').selectOption('');assert.match(await h.locator('#product-summary').textContent(),/250 compras/);assert.equal(await h.locator('[data-original]').count(),250);
+  await h.locator('#product-month').selectOption(lastMonth);assert.match(await h.locator('#product-summary').textContent(),/150 compras/);await h.locator('[data-original]').first().click();await h.locator('#detail-dialog').waitFor({state:'visible'});assert.match(await h.locator('#detail-items').textContent(),/caf/i);
+  assert.equal(product.remote,0);assert.deepEqual(product.errors,[]);assert(await h.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await product.context.close();
+ }
+ console.log(cases+' responsive scenarios passed; filters, real-value reports, safe navigation, shared reads, simulated insert/delete/budget/login/logout, PWA cache, calendar rollover, shared budgets and post-write read failures passed. Phase 2 editing, add/remove items, conflicts, duplicates, retries and paginated product histories passed on mobile/desktop. No live Supabase calls.');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error.message);process.exit(1);});
