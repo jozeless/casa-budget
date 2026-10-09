@@ -138,7 +138,7 @@ input:focus, select:focus { border-color: var(--accent); }
 .bottom-nav button span { display: block; font-size: 12px; margin-top: 3px; }
 .bottom-nav button[aria-current="page"] { color: var(--text); background: var(--surface2); }
 .nav-spacer { display: block; }
-.fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-height) + 12px + var(--safe-bottom)); width: var(--fab-size); height: var(--fab-size); z-index: 11; background: var(--blue); color: var(--text); border: 2px solid var(--bg); border-radius: 50%; font-size: 32px; line-height: 1; }
+.fab { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--nav-height) - var(--fab-size) + 12px + var(--safe-bottom)); width: var(--fab-size); height: var(--fab-size); z-index: 11; background: var(--purple); color: #FFFFFF; border: 2px solid var(--bg); border-radius: 50%; font-size: 32px; line-height: 1; }
 .fab:hover { background: var(--purple); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--navigation-clearance) + 8px); z-index: 20; background: var(--surface2); border: var(--border-width) solid var(--accent); color: var(--text); border-radius: var(--radius-sm); padding: 14px 18px; width: max-content; max-width: 90vw; font-size: 13px; }
 code { color: var(--accent); }
