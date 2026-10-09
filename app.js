@@ -9,6 +9,8 @@ const store = {client:null,user:null,household:null,purchases:[],items:[],select
 const analytics=window.CASA_BUDGET;
 let loadTask=null;
 let routeTask=null;
+const dataView={tab:'summary',shop:null,storeLimit:50,productLimit:50,purchaseLimit:50};
+let dataCache=null;
 let editingPurchase=null;
 let phase2Ready=true;
 let productRows=[],productName='',productEpoch=0;
@@ -43,6 +45,13 @@ function resetDashboard(){
     $(id).value='';if($(id).dataset){delete $(id).dataset.initialized;delete $(id).dataset.manual;delete $(id).dataset.currentMonth;}
   }
   store.page='home';store.historyLimit=50;
+  dataCache=null;dataView.tab='summary';dataView.shop=null;dataView.storeLimit=50;dataView.productLimit=50;dataView.purchaseLimit=50;
+  $('data-product-search').value='';$('data-evolution').value='monthly';
+  for(const id of ['data-total','data-count','data-average','data-used'])$(id).textContent='—';
+  $('data-store-purchases').innerHTML='';$('data-empty').classList.add('hidden');
+  for(const id of ['data-budget-note','data-product-count','data-evolution-note','data-store-title'])$(id).textContent='';
+  $('data-store-detail').classList.add('hidden');
+  selectDataTab('summary');
   for(const id of ['purchase-dialog','detail-dialog','budget-dialog','add-menu-dialog','product-dialog','duplicate-dialog'])if($(id).open)$(id).close();
 }
 const view = name => {
@@ -289,9 +298,10 @@ function updateFilters(){
   for(const id of ['history-month','data-month']){
     const previous=$(id).value;
     const followCurrent=$(id).dataset.manual!=='true'&&previous===$(id).dataset.currentMonth;
-    if(previous&&!months.includes(previous))months.push(previous);
-    $(id).innerHTML=(id==='history-month'?'<option value="">Todos los meses</option>':'')+months.map(month=>`<option value="${month}">${monthLabel(month)}</option>`).join('');
-    $(id).value=followCurrent?current:previous!==''&&months.includes(previous)?previous:($(id).dataset.initialized==='true'&&id==='history-month'?'':current);
+    const choices=id==='data-month'?analytics.dataMonths(store.purchases,current,previous):months;
+    if(previous&&!choices.includes(previous))choices.push(previous);
+    $(id).innerHTML=(id==='history-month'?'<option value="">Todos los meses</option>':'')+choices.map(month=>`<option value="${month}">${monthLabel(month)}</option>`).join('');
+    $(id).value=followCurrent?current:previous!==''&&choices.includes(previous)?previous:($(id).dataset.initialized==='true'&&id==='history-month'?'':current);
     $(id).dataset.initialized='true';$(id).dataset.currentMonth=current;
   }
   const supermarket=$('history-store').value;
@@ -322,7 +332,9 @@ function render(){
   $('weekly-amount').textContent=fmt(weekly.amount/100);
   const dateFormat={day:'numeric',month:'short'};
   $('weekly-period').textContent=`${weekly.from.toLocaleDateString('es-ES',dateFormat)} – ${weekly.to.toLocaleDateString('es-ES',dateFormat)} · ${weekly.daysThisWeek} días de este mes`;
-  renderHistory();renderData();navigate(store.page,false);
+  renderHistory();
+  if(store.loaded){const model=dataModel();renderDataStores(model);renderDataProducts(model);}
+  renderData();navigate(store.page,false);
 }
 function renderHistory(){
   if(!store.loaded)return;
@@ -331,16 +343,77 @@ function renderHistory(){
   $('purchases-list').innerHTML=purchaseCards(results.slice(0,store.historyLimit));
   $('history-more-btn').classList.toggle('hidden',results.length<=store.historyLimit);
 }
-function renderData(){
-  if(!store.loaded)return;
-  const purchases=analytics.inMonth(store.purchases,$('data-month').value),ids=new Set(purchases.map(p=>p.id));
-  const byStore=new Map(),byProduct=new Map();
-  purchases.forEach(p=>byStore.set(p.store.trim(),(byStore.get(p.store.trim())||0)+analytics.cents(p.total)));
-  store.items.filter(item=>ids.has(item.purchase_id)).forEach(item=>{const name=analytics.productKey(item.name);byProduct.set(name,(byProduct.get(name)||0)+analytics.cents(item.line_total));});
-  report('store-report',[...byStore].sort((a,b)=>b[1]-a[1]),'No hay gastos por supermercado en este mes.');
-  report('product-report',[...byProduct].sort((a,b)=>b[1]-a[1]),'No hay productos detallados en este mes.');
-  report('monthly-report',analytics.evolution(store.purchases).map(m=>[monthLabel(m.month),m.total]),'');
+function dataModel(){
+  const month=$('data-month').value,budget=store.household.monthly_budget;
+  if(!dataCache||dataCache.month!==month||dataCache.budget!==budget||dataCache.purchases!==store.purchases||dataCache.items!==store.items){
+    dataCache={month,budget,purchases:store.purchases,items:store.items,model:analytics.dataIntelligence(store.purchases,store.items,month,budget)};
+  }
+  return dataCache.model;
 }
+const percentage=value=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:1}).format(value)+' %';
+function selectDataTab(tab,focus=false){
+  if(!['summary','stores','products'].includes(tab))return;
+  dataView.tab=tab;
+  document.querySelectorAll('[data-data-tab]').forEach(button=>{
+    const selected=button.dataset.dataTab===tab;
+    button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;
+    if(selected&&focus)button.focus();
+  });
+  for(const name of ['summary','stores','products'])$('data-'+name+'-panel').classList.toggle('hidden',name!==tab);
+  renderData();
+}
+function renderData(){
+  if(!store.loaded||!store.household)return;
+  const model=dataModel(),summary=model.summary;
+  $('data-total').textContent=fmt(summary.spent/100);$('data-count').textContent=String(summary.count);
+  $('data-average').textContent=summary.average===null?'Sin compras':fmt(summary.average/100);
+  $('data-used').textContent=summary.used===null?'No aplicable':percentage(summary.used);
+  $('data-empty').classList.toggle('hidden',summary.count!==0);
+  $('data-budget-note').textContent=$('data-month').value===monthKey(new Date())?'Comparación con el presupuesto mensual vigente.':'Este mes se compara con el presupuesto mensual actual, no con un presupuesto histórico.';
+  if(dataView.tab==='summary'){
+    const weekly=$('data-evolution').value==='weekly';
+    const dateLabel=value=>{const [y,m,d]=value.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('es-ES',{day:'numeric',month:'short'});};
+    const values=weekly?model.weekly.map(w=>[`${dateLabel(w.from)} – ${dateLabel(w.to)}`,w.total]):model.monthly.map(m=>[monthLabel(m.month),m.total]);
+    $('data-evolution-note').textContent=weekly?'Semanas de lunes a domingo; solo se cuentan compras del mes seleccionado.':'Seis meses consecutivos hasta el mes seleccionado, incluidos los meses sin compras.';
+    report('monthly-report',values,'');
+  }else if(dataView.tab==='stores')renderDataStores(model);
+  else renderDataProducts(model);
+}
+function dataRows(id,entries,type,empty){
+  const max=entries.reduce((n,e)=>Math.max(n,e.total),1);
+  $(id).innerHTML=entries.length?entries.map(entry=>`<button type="button" class="product-link" data-${type}="${safe(entry.key)}"><span class="report-line"><span>${safe(entry.name)}</span><b>${fmt(entry.total/100)}</b></span><span class="hint">${type==='store'?percentage(entry.percentage)+' del gasto del mes':entry.count+(entry.count===1?' compra distinta':' compras distintas')}</span><span class="report-meter" aria-hidden="true"><span style="width:${entry.total>0?Math.max(2,entry.total/max*100):0}%"></span></span></button>`).join(''):`<p class="muted">${empty}</p>`;
+}
+function renderDataStores(model){
+  dataRows('store-report',model.stores.slice(0,dataView.storeLimit),'store','No hay gastos por supermercado en este mes.');
+  $('data-stores-more').classList.toggle('hidden',model.stores.length<=dataView.storeLimit);
+  const selected=model.stores.find(s=>s.key===dataView.shop);
+  $('data-store-detail').classList.toggle('hidden',!selected);
+  $('data-store-title').textContent=selected?selected.name:'';
+  $('data-store-purchases').innerHTML=selected?purchaseCards(selected.purchases.slice(0,dataView.purchaseLimit)):'';
+  $('data-store-more').classList.toggle('hidden',!selected||selected.purchases.length<=dataView.purchaseLimit);
+}
+function renderDataProducts(model){
+  const query=analytics.normalize($('data-product-search').value);
+  const products=model.products.filter(p=>analytics.normalize(p.name).includes(query));
+  $('data-product-count').textContent=`${products.length} productos`;
+  dataRows('product-report',products.slice(0,dataView.productLimit),'product',model.products.length?'No hay productos que coincidan con la búsqueda.':'No hay productos detallados en este mes.');
+  $('data-products-more').classList.toggle('hidden',products.length<=dataView.productLimit);
+}
+$('store-report').onclick=event=>{const button=event.target.closest('[data-store]');if(!button||!store.loaded)return;dataView.shop=button.dataset.store;dataView.purchaseLimit=50;renderDataStores(dataModel());};
+$('data-store-purchases').onclick=event=>{const card=event.target.closest('[data-purchase]');if(card)purchaseDetail(card.dataset.purchase);};
+$('data-evolution').onchange=renderData;
+$('data-product-search').oninput=()=>{dataView.productLimit=50;if(store.loaded)renderDataProducts(dataModel());};
+$('data-products-more').onclick=()=>{dataView.productLimit+=50;renderData();};
+$('data-stores-more').onclick=()=>{dataView.storeLimit+=50;renderData();};
+$('data-store-more').onclick=()=>{dataView.purchaseLimit+=50;renderData();};
+document.querySelectorAll('[data-data-tab]').forEach(button=>{
+  button.onclick=()=>selectDataTab(button.dataset.dataTab);
+  button.onkeydown=event=>{
+    const names=['summary','stores','products'];let index=names.indexOf(dataView.tab);
+    if(event.key==='ArrowRight')index=(index+1)%3;else if(event.key==='ArrowLeft')index=(index+2)%3;else if(event.key==='Home')index=0;else if(event.key==='End')index=2;else return;
+    event.preventDefault();selectDataTab(names[index],true);
+  };
+});
 function report(id,list,empty){
   const max=list.reduce((value,[,amount])=>Math.max(value,amount),1);
   $(id).innerHTML=list.length?list.map(([name,value])=>{
@@ -535,7 +608,7 @@ $('add-menu-btn').onclick=()=>dialog('add-menu-dialog');
 $('refresh-data-btn').onclick=()=>refresh(true).catch(fail);
 for(const id of ['history-month','history-store'])$(id).onchange=()=>{if(id==='history-month')$(id).dataset.manual='true';store.historyLimit=50;renderHistory();};
 $('history-search').oninput=()=>{store.historyLimit=50;renderHistory();};
-$('data-month').onchange=()=>{$('data-month').dataset.manual='true';renderData();};
+$('data-month').onchange=()=>{$('data-month').dataset.manual='true';dataView.shop=null;dataView.storeLimit=50;dataView.productLimit=50;dataView.purchaseLimit=50;renderData();};
 $('history-more-btn').onclick=()=>{store.historyLimit+=50;renderHistory();};
 $('new-purchase-btn').onclick=()=>{try{$('add-menu-dialog').close();openPurchase();}catch(error){notice(phaseError(error));}};
 $('new-budget-btn').onclick=()=>{$('budget-input').value=store.household.monthly_budget;dialog('budget-dialog');};

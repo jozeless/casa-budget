@@ -180,3 +180,17 @@ code { color: var(--accent); }
 #settings-page > .panel + .panel { margin-top:var(--space-md); }
 #settings-page .code-row { flex-wrap:wrap; }
 #settings-page code { overflow-wrap:anywhere; min-width:0; }
+
+/* Data Intelligence: styles are scoped to Data; other screens stay unchanged. */
+#data-page .data-tabs { display:flex; gap:var(--space-sm); margin:var(--space-md) 0; }
+#data-page .data-tabs button { flex:1; min-width:0; min-height:44px; padding:10px 6px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface); color:var(--muted); }
+#data-page .data-tabs button[aria-selected="true"] { background:var(--surface2); color:var(--text); border-color:var(--accent); }
+#data-page .data-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-md); }
+#data-page .data-metrics strong { display:block; font-size:22px; margin-top:var(--space-sm); overflow-wrap:anywhere; }
+#data-page .data-metrics span { color:var(--muted); font-size:13px; }
+#data-page [role="tabpanel"] > h2 { margin-top:var(--space-md); }
+#data-page .product-link .hint { display:block; margin:4px 0; }
+#data-page #store-report .report-meter > span { background:var(--blue); }
+#data-page #data-store-detail { margin-top:var(--space-md); }
+#data-page #data-store-more,#data-page #data-products-more,#data-page #data-stores-more { margin-top:var(--space-md); width:100%; }
+@media(max-width:700px) { #data-page .data-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }

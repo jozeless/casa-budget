@@ -37,7 +37,52 @@
     const percentage=limit>0?Math.max(0,Math.min(100,balance/limit*100)):0;
     return {percentage,level:percentage>60?'high':percentage>30?'medium':'low',zeroBudget:limit===0};
   }
-  const api={remainingBudget,productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
+  const storeKey=value=>String(value??'').trim().toLocaleLowerCase('es');
+  const calendarDate=date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  function weeklySpending(purchases,month){
+    const [year,number]=month.split('-').map(Number),first=new Date(year,number-1,1),last=new Date(year,number,0);
+    const cursor=new Date(year,number-1,1-((first.getDay()+6)%7)),totals=new Map();
+    for(const purchase of inMonth(purchases,month)){
+      const [y,m,d]=purchase.purchased_on.split('-').map(Number),date=new Date(y,m-1,d);
+      date.setDate(date.getDate()-((date.getDay()+6)%7));const key=calendarDate(date);
+      totals.set(key,(totals.get(key)||0)+cents(purchase.total));
+    }
+    const weeks=[];
+    while(cursor<=last){
+      const end=new Date(cursor.getFullYear(),cursor.getMonth(),cursor.getDate()+6),from=calendarDate(cursor);
+      weeks.push({from,to:calendarDate(end),total:totals.get(from)||0});cursor.setDate(cursor.getDate()+7);
+    }
+    return weeks;
+  }
+  function dataIntelligence(purchases,items,month,budget){
+    const all=[...new Map(purchases.map(p=>[p.id,p])).values()];
+    const selected=inMonth(all,month),ids=new Set(selected.map(p=>p.id));
+    const spent=total(selected),count=selected.length,limit=cents(budget),stores=new Map(),products=new Map();
+    for(const purchase of selected){
+      const key=storeKey(purchase.store);
+      if(!stores.has(key))stores.set(key,{key,name:purchase.store.trim(),total:0,purchases:[]});
+      const entry=stores.get(key);entry.total+=cents(purchase.total);entry.purchases.push(purchase);
+    }
+    for(const item of items){
+      if(!ids.has(item.purchase_id))continue;
+      const key=productKey(item.name);
+      if(!products.has(key))products.set(key,{key,name:item.name.trim(),total:0,ids:new Set()});
+      const entry=products.get(key);entry.total+=cents(item.line_total);entry.ids.add(item.purchase_id);
+    }
+    const sort=(a,b)=>b.total-a.total||a.name.localeCompare(b.name,'es');
+    const [year,number]=month.split('-').map(Number);
+    return {summary:{spent,count,average:count?Math.round(spent/count):null,used:limit>0?spent/limit*100:null},
+      stores:[...stores.values()].map(s=>({...s,percentage:spent?s.total/spent*100:0})).sort(sort),
+      products:[...products.values()].map(p=>({key:p.key,name:p.name,total:p.total,count:p.ids.size})).sort(sort),
+      monthly:evolution(all,new Date(year,number-1,1)),weekly:weeklySpending(selected,month)};
+  }
+  function dataMonths(purchases,current,previous=''){
+    const index=key=>{const [y,m]=key.split('-').map(Number);return y*12+m-1;};
+    const end=index(current);let first=end-5,last=end;
+    for(const key of [...purchases.map(p=>p.purchased_on.slice(0,7)),...(previous?[previous]:[])]){first=Math.min(first,index(key));last=Math.max(last,index(key));}
+    return Array.from({length:last-first+1},(_,i)=>{const value=last-i;return `${String(Math.floor(value/12)).padStart(4,'0')}-${String(value%12+1).padStart(2,'0')}`;});
+  }
+  const api={dataMonths,storeKey,weeklySpending,dataIntelligence,remainingBudget,productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   else root.CASA_BUDGET=api;
 })(typeof window!=='undefined'?window:globalThis);
