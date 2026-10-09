@@ -2,6 +2,6 @@
 // Actualiza ambos valores juntos al cambiar de proyecto. Nunca incluyas secretos.
 // supabaseAnonKey conserva el nombre existente, pero solo admite claves publishable.
 window.CASA_CONFIG = {
-  supabaseUrl: 'https://vqvgjstmfnybovkxcjql.supabase.co',
-  supabaseAnonKey: 'sb_publishable_YIqULeArGGiuQ5_It9bI1w_6nATLPwk'
+  supabaseUrl: 'https://eyapzprqhendzpnepdtg.supabase.co',
+  supabaseAnonKey: 'sb_publishable_suW1k8S0SgXI_DP31Qm4JA_QEzST5Ms'
 };
