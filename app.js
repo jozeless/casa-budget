@@ -5,8 +5,27 @@ const fmt = n => new Intl.NumberFormat('es-NL', {style:'currency',currency:'EUR'
 const dateLocal = () => {const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 const safe = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const monthKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-const store = {client:null, user:null, household:null, month:new Date(new Date().getFullYear(),new Date().getMonth(),1), purchases:[], items:[], selected:null};
-const view = name => ['setup','auth','recovery','home-setup','dashboard'].forEach(v => $(v+'-view').classList.toggle('hidden',v!==name));
+const store = {client:null,user:null,household:null,purchases:[],items:[],selected:null,loaded:false,dataVersion:0,page:'home',historyLimit:50};
+const analytics=window.CASA_BUDGET;
+let loadTask=null;
+let routeTask=null;
+function resetDashboard(){
+  for(const id of ['remaining','spent','budget','weekly-amount'])$(id).textContent='—';
+  for(const id of ['recent-purchases','purchases-list','store-report','product-report','monthly-report'])$(id).innerHTML='';
+  $('purchase-count').textContent='';$('weekly-period').textContent='';$('progress-bar').style.width='0%';
+  $('budget-warning').classList.add('hidden');
+  for(const id of ['history-month','history-store','history-search','data-month']){
+    $(id).value='';if($(id).dataset)delete $(id).dataset.initialized;
+  }
+  store.page='home';store.historyLimit=50;
+  for(const id of ['purchase-dialog','detail-dialog','budget-dialog','add-menu-dialog'])if($(id).open)$(id).close();
+}
+const view = name => {
+  ['setup','auth','recovery','home-setup','dashboard'].forEach(v=>$(v+'-view').classList.toggle('hidden',v!==name));
+  const showNav=name==='dashboard'&&!!store.household&&!recovery.active;
+  $('app-nav').classList.toggle('hidden',!showNav);$('add-menu-btn').classList.toggle('hidden',!showNav);
+  document.body?.classList.toggle('app-open',showNav);
+};
 let toastTimer;
 const notice = msg => {const el=$('toast'); el.textContent=msg;el.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.add('hidden'),4500);};
 const fail = err => {notice('Error: '+(err?.message||'Intenta nuevamente'));};
@@ -106,7 +125,7 @@ async function start(){
       const newId=session?.user?.id||null;
       const changed=newId!==(store.user?.id||null);
       store.user=session?.user||null;
-      if(changed)store.household=null;
+      if(changed){store.household=null;store.loaded=false;store.dataVersion++;store.purchases=[];store.items=[];resetDashboard();}
       if(event==='PASSWORD_RECOVERY'){
         validRecovery(session);return;
       }
@@ -115,7 +134,7 @@ async function start(){
         if(event==='SIGNED_OUT' || (recovery.status==='valid' && newId && newId!==recovery.userId))invalidRecovery();
         return;
       }
-      if(changed)setTimeout(()=>route().catch(fail),0);
+      if(changed&&event!=='INITIAL_SESSION')setTimeout(()=>route().catch(fail),0);
     }).data.subscription;
     // Initialization can finish before its deferred PASSWORD_RECOVERY notification.
     const {error:initError}=await store.client.auth.initialize();
@@ -145,37 +164,133 @@ async function start(){
     else {fail(e);view('setup');}
   }
 }
-async function route(){if(recovery.active){showRecovery();return;}if(!store.user){view('auth');return;}
-  const {data,error}=await store.client.from('household_members').select('household_id').eq('user_id',store.user.id).maybeSingle();if(error)throw error;
+async function route(){
   if(recovery.active){showRecovery();return;}
-  if(!data){view('home-setup');return;}
-  const r=await store.client.from('households').select('id,name,monthly_budget,invite_code').eq('id',data.household_id).single();if(r.error)throw r.error;
-  if(recovery.active){showRecovery();return;}
-  store.household=r.data;view('dashboard');$('home-display').textContent=r.data.name;$('invite-code').textContent=r.data.invite_code;$('user-email').textContent=`Sesión: ${store.user.email}`;await refresh();
+  if(!store.user){view('auth');return;}
+  const userId=store.user.id;
+  if(routeTask?.userId===userId)return routeTask.promise;
+  const promise=(async()=>{
+    if(!store.household){
+      const {data,error}=await store.client.from('household_members').select('household_id').eq('user_id',userId).maybeSingle();if(error)throw error;
+      if(recovery.active){showRecovery();return;}
+      if(store.user?.id!==userId)return;
+      if(!data){view('home-setup');return;}
+      const r=await store.client.from('households').select('id,name,monthly_budget,invite_code').eq('id',data.household_id).single();if(r.error)throw r.error;
+      if(recovery.active){showRecovery();return;}
+      if(store.user?.id!==userId)return;
+      store.household=r.data;
+    }
+    view('dashboard');$('home-display').textContent=store.household.name;$('invite-code').textContent=store.household.invite_code;$('user-email').textContent=`Sesión: ${store.user.email}`;
+    await refresh().catch(fail);
+  })();
+  routeTask={userId,promise};
+  try{await promise;}finally{if(routeTask?.promise===promise)routeTask=null;}
 }
-async function refresh(){if(!store.household)return;
-  const y=store.month.getFullYear(),m=store.month.getMonth();const from=monthKey(store.month)+'-01';const next=new Date(y,m+1,1);const to=monthKey(next)+'-01';
-  const r=await store.client.from('purchases').select('id,store,purchased_on,total,created_at').eq('household_id',store.household.id).gte('purchased_on',from).lt('purchased_on',to).order('purchased_on',{ascending:false}).order('created_at',{ascending:false});if(r.error)throw r.error;
-  store.purchases=r.data||[];
-  const ids=store.purchases.map(x=>x.id);store.items=[];
-  if(ids.length){const ir=await store.client.from('purchase_items').select('id,purchase_id,name,quantity,line_total').in('purchase_id',ids);if(ir.error)throw ir.error;store.items=ir.data||[];}
-  render();
+async function paged(query){
+  const rows=[];
+  for(let offset=0;;offset+=200){
+    const {data,error}=await query().range(offset,offset+199);
+    if(error)throw error;
+    rows.push(...(data||[]));
+    if((data||[]).length<200)return rows;
+  }
+}
+async function refresh(force=false){
+  if(!store.household)return;
+  if(force){store.dataVersion++;store.loaded=false;}
+  if(loadTask){
+    try{await loadTask;}catch(error){if(!force)throw error;}
+    if(!force&&store.loaded){render();return;}
+  }
+  if(store.loaded){render();return;}
+  const householdId=store.household.id,version=store.dataVersion;
+  $('data-status').textContent='Cargando compras…';$('refresh-data-btn').disabled=true;
+  const promise=(async()=>{
+    try{
+      const purchases=await paged(()=>store.client.from('purchases').select('id,store,purchased_on,total,created_at').eq('household_id',householdId).order('purchased_on',{ascending:false}).order('created_at',{ascending:false}).order('id',{ascending:false}));
+      const items=[];
+      for(let index=0;index<purchases.length;index+=100){
+        const ids=purchases.slice(index,index+100).map(p=>p.id);
+        items.push(...await paged(()=>store.client.from('purchase_items').select('id,purchase_id,name,quantity,line_total').in('purchase_id',ids).order('id',{ascending:true})));
+      }
+      if(store.household?.id!==householdId||store.dataVersion!==version)return;
+      store.purchases=purchases;store.items=items;store.loaded=true;
+      updateFilters();render();$('data-status').textContent='Compras actualizadas';
+    }catch(error){
+      if(store.household?.id===householdId&&store.dataVersion===version)$('data-status').textContent='No se pudieron actualizar las compras. Pulsa Actualizar para reintentar.';
+      throw error;
+    }finally{$('refresh-data-btn').disabled=false;}
+  })();
+  loadTask=promise;
+  try{await promise;}finally{if(loadTask===promise)loadTask=null;}
+}
+function navigate(page, resetScroll=true){
+  if(!['home','history','data'].includes(page))return;
+  store.page=page;
+  for(const name of ['home','history','data'])$(name+'-page').classList.toggle('hidden',name!==page);
+  document.querySelectorAll('[data-page]').forEach(button=>{
+    if(button.dataset.page===page)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+  });
+  $('screen-heading').textContent={home:'Inicio',history:'Historial',data:'Data'}[page];
+  if(resetScroll){document.querySelector?.('.shell')?.scrollTo({top:0});$('screen-heading').focus?.({preventScroll:true});}
+}
+function updateFilters(){
+  const current=monthKey(new Date());
+  const months=[...new Set([current,...store.purchases.map(p=>p.purchased_on.slice(0,7)),...analytics.evolution([],new Date()).map(m=>m.month)])].sort().reverse();
+  for(const id of ['history-month','data-month']){
+    const previous=$(id).value;
+    $(id).innerHTML=(id==='history-month'?'<option value="">Todos los meses</option>':'')+months.map(month=>`<option value="${month}">${monthLabel(month)}</option>`).join('');
+    $(id).value=previous!==''&&months.includes(previous)?previous:($(id).dataset.initialized==='true'&&id==='history-month'?'':current);
+    $(id).dataset.initialized='true';
+  }
+  const supermarket=$('history-store').value;
+  const supermarkets=[...new Set(store.purchases.map(p=>p.store))].sort((a,b)=>a.localeCompare(b,'es'));
+  $('history-store').innerHTML='<option value="">Todos los supermercados</option>'+supermarkets.map(name=>`<option value="${safe(name)}">${safe(name)}</option>`).join('');
+  $('history-store').value=supermarkets.includes(supermarket)?supermarket:'';
+}
+function monthLabel(month){return new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,1).toLocaleDateString('es-ES',{month:'long',year:'numeric'});}
+function purchaseCards(purchases){
+  return purchases.length?purchases.map(p=>`<button class="purchase-card" data-purchase="${p.id}"><span class="purchase-icon" aria-hidden="true">🛒</span><span class="purchase-text"><b>${safe(p.store)}</b><small>${new Date(p.purchased_on+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})}</small></span><span class="purchase-price">${fmt(p.total)}</span></button>`).join(''):'<div class="empty">No hay compras para este periodo o búsqueda.</div>';
 }
 function render(){
-  const spent=store.purchases.reduce((n,p)=>n+Number(p.total),0),budget=Number(store.household.monthly_budget),remaining=budget-spent;
-  $('period-heading').textContent=store.month.toLocaleDateString('es-ES',{month:'long',year:'numeric'});
-  $('month-name').textContent=store.month.toLocaleDateString('es-ES',{month:'long',year:'numeric'});
-  $('remaining').textContent=fmt(remaining);$('spent').textContent=fmt(spent);$('budget').textContent=fmt(budget);
-  $('progress-bar').style.width=`${budget>0?Math.min(100,(spent/budget)*100):spent>0?100:0}%`;
-  $('progress-bar').style.background=remaining<0?'#ff9a8d':'#b7f2af';$('budget-warning').classList.toggle('hidden',remaining>=0);
-  $('purchase-count').textContent=`${store.purchases.length} compras`;
-  $('purchases-list').innerHTML=store.purchases.length?store.purchases.map(p=>`<button class="purchase-card" data-purchase="${p.id}"><span class="purchase-icon">🛒</span><span class="purchase-text"><b>${safe(p.store)}</b><small>${new Date(p.purchased_on+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'})}</small></span><span class="purchase-price">${fmt(p.total)}</span></button>`).join(''):'<div class="empty">Todavía no hay compras registradas este mes.</div>';
-  const byStore=new Map();store.purchases.forEach(p=>byStore.set(p.store.trim(),(byStore.get(p.store.trim())||0)+Number(p.total)));
-  const byProduct=new Map();store.items.forEach(i=>{const name=i.name.trim().toLocaleLowerCase('es');byProduct.set(name,(byProduct.get(name)||0)+Number(i.line_total));});
-  report('store-report',byStore,'Aún no hay gastos por supermercado.');report('product-report',byProduct,'Añade productos al registrar compras para ver este análisis.');
+  if(!store.loaded||!store.household)return;
+  const today=new Date(),current=monthKey(today),purchases=analytics.inMonth(store.purchases,current);
+  const spent=analytics.total(purchases),budget=analytics.cents(store.household.monthly_budget),remaining=budget-spent;
+  $('period-heading').textContent=monthLabel(current);
+  $('remaining').textContent=fmt(remaining/100);$('spent').textContent=fmt(spent/100);$('budget').textContent=fmt(budget/100);
+  const percentage=budget>0?Math.min(100,spent/budget*100):spent>0?100:0;
+  $('progress-bar').style.width=`${percentage}%`;
+  $('progress-bar').classList.toggle('over-budget',remaining<0);
+  $('budget-progress').setAttribute('aria-valuenow',String(Math.round(percentage)));
+  $('budget-progress').setAttribute('aria-valuetext',`${fmt(spent/100)} gastados de ${fmt(budget/100)}`);
+  $('budget-warning').classList.toggle('hidden',remaining>=0);
+  const weekly=analytics.weekly(store.household.monthly_budget,store.purchases,today);
+  $('weekly-amount').textContent=fmt(weekly.amount/100);
+  const dateFormat={day:'numeric',month:'short'};
+  $('weekly-period').textContent=`${weekly.from.toLocaleDateString('es-ES',dateFormat)} – ${weekly.to.toLocaleDateString('es-ES',dateFormat)} · ${weekly.daysThisWeek} días de este mes`;
+  $('recent-purchases').innerHTML=purchaseCards(purchases.slice(0,3));
+  renderHistory();renderData();navigate(store.page,false);
 }
-function report(id,map,empty){const list=[...map.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8),max=list[0]?.[1]||1;
-  $(id).innerHTML=list.length?list.map(([name,value])=>`<div><div class="report-line"><span>${safe(name)}</span><b>${fmt(value)}</b></div><div class="report-meter"><div style="width:${Math.max(2,value/max*100)}%"></div></div></div>`).join(''):`<p class="muted">${empty}</p>`;
+function renderHistory(){
+  if(!store.loaded)return;
+  const results=analytics.history(store.purchases,store.items,{month:$('history-month').value,supermarket:$('history-store').value,query:$('history-search').value});
+  $('purchase-count').textContent=`${results.length} compras`;
+  $('purchases-list').innerHTML=purchaseCards(results.slice(0,store.historyLimit));
+  $('history-more-btn').classList.toggle('hidden',results.length<=store.historyLimit);
+}
+function renderData(){
+  if(!store.loaded)return;
+  const purchases=analytics.inMonth(store.purchases,$('data-month').value),ids=new Set(purchases.map(p=>p.id));
+  const byStore=new Map(),byProduct=new Map();
+  purchases.forEach(p=>byStore.set(p.store.trim(),(byStore.get(p.store.trim())||0)+analytics.cents(p.total)));
+  store.items.filter(item=>ids.has(item.purchase_id)).forEach(item=>{const name=item.name.trim().toLocaleLowerCase('es');byProduct.set(name,(byProduct.get(name)||0)+analytics.cents(item.line_total));});
+  report('store-report',[...byStore].sort((a,b)=>b[1]-a[1]),'No hay gastos por supermercado en este mes.');
+  report('product-report',[...byProduct].sort((a,b)=>b[1]-a[1]),'No hay productos detallados en este mes.');
+  report('monthly-report',analytics.evolution(store.purchases).map(m=>[monthLabel(m.month),m.total]),'');
+}
+function report(id,list,empty){
+  const max=Math.max(1,...list.map(([,value])=>value));
+  $(id).innerHTML=list.length?list.map(([name,value])=>`<div><div class="report-line"><span>${safe(name)}</span><b>${fmt(value/100)}</b></div><div class="report-meter" aria-hidden="true"><div style="width:${value>0?Math.max(2,value/max*100):0}%"></div></div></div>`).join(''):`<p class="muted">${empty}</p>`;
 }
 function addItem(name='',qty='1',total=''){const row=document.createElement('div');row.className='item-row';row.innerHTML=`<input class="item-name" aria-label="Producto" maxlength="120" required placeholder="Producto" value="${safe(name)}"><input class="item-qty" aria-label="Cantidad" type="number" min="0.01" step="0.01" required value="${safe(qty)}"><input class="item-total" aria-label="Subtotal del producto" type="number" min="0" step="0.01" required placeholder="€ total" value="${safe(total)}"><button type="button" class="remove-item" aria-label="Quitar producto">×</button>`;row.querySelector('button').onclick=()=>row.remove();$('items-container').appendChild(row);}
 function dialog(id){$(id).showModal();}
@@ -187,7 +302,7 @@ async function savePurchase(ev){ev.preventDefault();const btn=$('save-purchase')
     if(items.length && Math.round(items.reduce((n,i)=>n+i.line_total,0)*100)!==Math.round(total*100))throw Error('La suma de productos debe coincidir con el total del recibo.');
     const r=await store.client.from('purchases').insert({household_id:store.household.id,created_by:store.user.id,store:storeName,purchased_on:date,total}).select('id').single();if(r.error)throw r.error;
     if(items.length){const ir=await store.client.from('purchase_items').insert(items.map(i=>({...i,purchase_id:r.data.id})));if(ir.error){await store.client.from('purchases').delete().eq('id',r.data.id);throw Error('No se pudieron guardar los productos. Revisa y repite la compra.');}}
-    $('purchase-dialog').close();$('purchase-form').reset();$('items-container').innerHTML='';store.month=new Date(Number(date.slice(0,4)),Number(date.slice(5,7))-1,1);await refresh();notice('Compra guardada ✔');
+    $('purchase-dialog').close();$('purchase-form').reset();$('items-container').innerHTML='';await refresh(true);notice('Compra guardada ✔');
   }catch(e){fail(e);}finally{btn.disabled=false;}
 }
 function purchaseDetail(id){const p=store.purchases.find(x=>x.id===id);if(!p)return;store.selected=p;
@@ -260,16 +375,22 @@ $('auth-form').onsubmit=async e=>{e.preventDefault();try{const r=await store.cli
 $('signup-btn').onclick=async()=>{try{const r=await store.client.auth.signUp({email:$('auth-email').value.trim(),password:$('auth-password').value,options:{emailRedirectTo:'https://jozeless.github.io/casa-budget/'}});if(r.error)throw r.error;if(r.data.session){store.user=r.data.user;await route();}else notice('Cuenta creada. Confirma tu email antes de entrar.');}catch(e){fail(e);}};
 $('create-home-form').onsubmit=async e=>{e.preventDefault();try{const r=await store.client.rpc('create_my_household',{p_name:$('home-name').value.trim(),p_budget:Number($('initial-budget').value)});if(r.error)throw r.error;await route();notice('Hogar creado ✔');}catch(e){fail(e);}};
 $('join-home-form').onsubmit=async e=>{e.preventDefault();try{const r=await store.client.rpc('join_my_household',{p_invite_code:$('join-code').value.trim()});if(r.error)throw r.error;await route();notice('Ya compartís hogar ✔');}catch(e){fail(e);}};
-$('logout-btn').onclick=async()=>{const r=await store.client.auth.signOut();if(r.error)fail(r.error);else{store.user=null;store.household=null;view('auth');}};
-$('prev-month').onclick=()=>{store.month=new Date(store.month.getFullYear(),store.month.getMonth()-1,1);refresh().catch(fail);};
-$('next-month').onclick=()=>{store.month=new Date(store.month.getFullYear(),store.month.getMonth()+1,1);refresh().catch(fail);};
-$('new-purchase-btn').onclick=()=>{$('purchase-date').value=dateLocal();$('items-container').innerHTML='';dialog('purchase-dialog');};
+$('logout-btn').onclick=async()=>{const r=await store.client.auth.signOut();if(r.error)fail(r.error);else{store.user=null;store.household=null;store.loaded=false;store.dataVersion++;store.purchases=[];store.items=[];resetDashboard();view('auth');}};
+document.querySelectorAll('[data-page]').forEach(button=>button.onclick=()=>navigate(button.dataset.page));
+$('see-history-btn').onclick=()=>navigate('history');
+$('add-menu-btn').onclick=()=>dialog('add-menu-dialog');
+$('refresh-data-btn').onclick=()=>refresh(true).catch(fail);
+for(const id of ['history-month','history-store'])$(id).onchange=()=>{store.historyLimit=50;renderHistory();};
+$('history-search').oninput=()=>{store.historyLimit=50;renderHistory();};
+$('data-month').onchange=renderData;
+$('history-more-btn').onclick=()=>{store.historyLimit+=50;renderHistory();};
+$('new-purchase-btn').onclick=()=>{$('add-menu-dialog').close();$('purchase-form').reset();$('purchase-date').value=dateLocal();$('items-container').innerHTML='';dialog('purchase-dialog');};
 $('new-budget-btn').onclick=()=>{$('budget-input').value=store.household.monthly_budget;dialog('budget-dialog');};
 $('add-item-btn').onclick=()=>addItem();
 $('purchase-form').onsubmit=savePurchase;
 $('budget-form').onsubmit=async e=>{e.preventDefault();try{const amount=Number($('budget-input').value);if(!Number.isFinite(amount)||amount<0)throw Error('Presupuesto inválido');const r=await store.client.from('households').update({monthly_budget:amount}).eq('id',store.household.id).select('monthly_budget').single();if(r.error)throw r.error;store.household.monthly_budget=r.data.monthly_budget;$('budget-dialog').close();render();notice('Presupuesto actualizado');}catch(err){fail(err);}};
-$('purchases-list').onclick=e=>{const card=e.target.closest('[data-purchase]');if(card)purchaseDetail(card.dataset.purchase);};
-$('delete-purchase').onclick=async()=>{if(!store.selected||!confirm(`¿Eliminar la compra de ${store.selected.store}?`))return;try{const r=await store.client.from('purchases').delete().eq('id',store.selected.id);if(r.error)throw r.error;$('detail-dialog').close();await refresh();notice('Compra eliminada');}catch(e){fail(e);}};
+for(const id of ['purchases-list','recent-purchases'])$(id).onclick=e=>{const card=e.target.closest('[data-purchase]');if(card)purchaseDetail(card.dataset.purchase);};
+$('delete-purchase').onclick=async()=>{if(!store.selected||!confirm(`¿Eliminar la compra de ${store.selected.store}?`))return;try{const r=await store.client.from('purchases').delete().eq('id',store.selected.id);if(r.error)throw r.error;$('detail-dialog').close();await refresh(true);notice('Compra eliminada');}catch(e){fail(e);}};
 $('copy-invite').onclick=async()=>{try{await navigator.clipboard.writeText(store.household.invite_code);notice('Código copiado');}catch(e){notice('Selecciona el código y cópialo manualmente.');}};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
 if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(console.warn);

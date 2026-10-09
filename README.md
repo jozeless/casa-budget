@@ -1,6 +1,23 @@
-# CASA · Compras compartidas (v1)
+# CASA · Compras compartidas (2.0 · Fase 1)
 
-Una app móvil de gastos del supermercado para dos personas, con Supabase (login + base de datos privada) y GitHub Pages. **Esta primera versión NO utiliza OpenAI ni cobra API.**
+Una app móvil de gastos del supermercado para dos personas, con Supabase (login + base de datos privada) y GitHub Pages. **Esta fase NO utiliza OpenAI ni cobra API.**
+
+## Interfaz de CASA 2.0
+
+- **Inicio:** presupuesto, gasto y saldo del mes actual, recomendación para lo que queda de la semana y las tres compras más recientes de ese mes.
+- **Historial:** filtro de mes o todos los meses, supermercado y búsqueda por supermercado o productos registrados. Detalles y eliminación con confirmación; sin edición.
+- **Data:** importes reales por supermercado y producto para el mes seleccionado y evolución del gasto de los últimos seis meses. Las compras sin productos detallados no se asignan a productos ni categorías inventadas.
+- **Añadir (+):** compra manual desde cualquier vista. Subir recibos permanece desactivado.
+
+La recomendación semanal divide el saldo positivo del mes entre los días restantes (incluido hoy) y lo multiplica por los días desde hoy hasta el domingo, recortados al final del mes. Usa días de calendario locales, semanas lunes-domingo e importes en céntimos. Un saldo negativo se muestra como tal y recomienda cero. No arrastra presupuesto ni gastos de otros meses.
+
+Las vistas comparten una carga paginada de las compras y sus productos. Cambiar de pestaña o filtrar no hace consultas nuevas. Registrar o eliminar una compra actualiza los datos compartidos; **Actualizar** permite consultar cambios de otra persona. Un error de carga no se representa como gasto cero. No se migran datos ni se cambia el esquema o RLS.
+
+## Pruebas de desarrollo
+
+Ejecuta `node --test` desde la raíz para las pruebas de calendario, importes, filtros, paginación, autenticación, configuración y caché. Para comprobar cambios de hora locales: `TZ=Europe/Amsterdam node --test`.
+
+Con Playwright y Chromium disponibles en el entorno, ejecuta `node scripts/check-ui.cjs`. Puedes indicar la ruta de Chromium con `CHROMIUM_PATH`. La prueba sirve los archivos en un servidor local temporal y utiliza exclusivamente Supabase simulado, incluidos registros y eliminaciones; no toca las compras reales. Comprueba móvil, escritorio, compras vacías, muchas compras, saldo negativo y caché PWA. Las capturas con datos simulados se guardan en `/tmp/casa2-mobile.png` y `/tmp/casa2-desktop.png`.
 
 ## Paso 1: Supabase
 
