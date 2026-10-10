@@ -54,7 +54,7 @@
     }
     return weeks;
   }
-  function dataIntelligence(purchases,items,month,budget){
+  function dataIntelligence(purchases,items,month,budget,adjustments=[]){
     const all=[...new Map(purchases.map(p=>[p.id,p])).values()];
     const selected=inMonth(all,month),ids=new Set(selected.map(p=>p.id));
     const spent=total(selected),count=selected.length,limit=cents(budget),stores=new Map(),products=new Map();
@@ -69,11 +69,13 @@
       if(!products.has(key))products.set(key,{key,name:item.name.trim(),total:0,ids:new Set()});
       const entry=products.get(key);entry.total+=cents(item.line_total);entry.ids.add(item.purchase_id);
     }
+    let generalAdjustments=0;
+    for(const a of adjustments){if(!ids.has(a.purchase_id))continue;const item=a.item_id&&items.find(i=>i.id===a.item_id&&i.purchase_id===a.purchase_id);if(item){const entry=products.get(productKey(item.name));if(entry)entry.attributed=(entry.attributed||0)+Number(a.amount_cents);}else generalAdjustments+=Number(a.amount_cents);}
     const sort=(a,b)=>b.total-a.total||a.name.localeCompare(b.name,'es');
     const [year,number]=month.split('-').map(Number);
-    return {summary:{spent,count,average:count?Math.round(spent/count):null,used:limit>0?spent/limit*100:null},
+    return {generalAdjustments,summary:{spent,count,average:count?Math.round(spent/count):null,used:limit>0?spent/limit*100:null},
       stores:[...stores.values()].map(s=>({...s,percentage:spent?s.total/spent*100:0})).sort(sort),
-      products:[...products.values()].map(p=>({key:p.key,name:p.name,total:p.total,count:p.ids.size})).sort(sort),
+      products:[...products.values()].map(p=>({key:p.key,name:p.name,total:p.total,count:p.ids.size,...(p.attributed?{attributed:p.attributed}:{})})).sort(sort),
       monthly:evolution(all,new Date(year,number-1,1)),weekly:weeklySpending(selected,month)};
   }
   function dataMonths(purchases,current,previous=''){
