@@ -194,3 +194,18 @@ code { color: var(--accent); }
 #data-page #data-store-detail { margin-top:var(--space-md); }
 #data-page #data-store-more,#data-page #data-products-more,#data-page #data-stores-more { margin-top:var(--space-md); width:100%; }
 @media(max-width:700px) { #data-page .data-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+/* CASA 3.0: additions scoped to receipt review/storage. */
+.receipt-modal { max-width:680px; width:calc(100% - 24px); max-height:calc(100dvh - 24px); overflow:auto; }
+.receipt-modal > * + * { margin-top:var(--space-md); }
+.receipt-item { background:var(--surface2); border:1px solid var(--line); padding:var(--space-md); border-radius:var(--radius-sm); }
+.receipt-pair { display:grid; grid-template-columns:1fr 1fr; gap:var(--space-sm); }
+.receipt-pair > label { min-width:0; }
+.receipt-warning { color:#FFB84D; overflow-wrap:anywhere; }
+.receipt-check,.receipt-library-row { display:flex; gap:var(--space-sm); align-items:center; }
+.receipt-check input,.receipt-library-row input { width:24px; flex:none; }
+.receipt-storage { margin-top:var(--space-md); }
+#receipt-library { max-height:280px; overflow:auto; }
+#receipt-library label { padding:var(--space-sm); }
+#receipt-original { display:block; overflow-wrap:anywhere; }
+
+#receipt-preview { display:block; width:100%; max-height:280px; object-fit:contain; background:var(--surface2); }

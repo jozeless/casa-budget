@@ -1,0 +1,4 @@
+const test=require('node:test'),assert=require('node:assert/strict'),pdfLib=require('pdf-lib');
+async function validator(){return (await import('../supabase/functions/_shared/pdf-validation.mjs')).createPdfValidator(pdfLib);}
+test('one-page PDF retained as PDF, multipage and malformed input rejected',async()=>{const validate=await validator(),pdf=await pdfLib.PDFDocument.create();pdf.addPage().drawText('Jumbo total EUR 46.88');await validate(await pdf.save());pdf.addPage();await assert.rejects(validate(await pdf.save()),/PDF_UNSUPPORTED/);await assert.rejects(validate(new TextEncoder().encode('%PDF- broken')),/PDF_UNSUPPORTED/);});
+test('PDF JavaScript/open actions are rejected rather than forwarded',async()=>{const validate=await validator(),pdf=await pdfLib.PDFDocument.create();pdf.addPage();pdf.addJavaScript('unsafe','app.alert("no")');await assert.rejects(validate(await pdf.save()),/PDF_UNSUPPORTED/);});
