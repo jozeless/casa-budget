@@ -23,3 +23,9 @@ Ante un error de aplicación, volver temporalmente al cliente anterior y mantene
 ## Pruebas y límites
 
 PostgreSQL aislado replica `auth.uid()` con usuarios ficticios y ejecuta las políticas RLS reales de `schema.sql`. Comprueba rollback después de un fallo durante la inserción, idempotencia, solicitudes concurrentes, conflictos simultáneos, validación y aislamiento entre hogares. No reproduce el servicio Auth, PostgREST, correo ni toda la configuración de Supabase. Los permisos finales del proyecto y el flujo remoto deben comprobarse manualmente después de aplicar la migración autorizada.
+
+## CASA 3.0 — recibos inteligentes
+
+Aplicar después de Fase 2: `20261010_smart_receipts.sql`. No ejecutar automáticamente ni en KB WODS. Añade ajustes, metadatos de recibos, reservas de consumo, políticas de Storage y RPC. Mantiene la firma manual y bloquea ediciones antiguas que perderían descuentos. No reescribe importes históricos.
+
+La guía completa de respaldo, bucket privado, secretos, despliegue manual, permisos, recuperación de estados interrumpidos y Android está en [CASA-3.0-SETUP.md](../docs/CASA-3.0-SETUP.md). Verificar un bucket preexistente: el SQL no cambia silenciosamente sus opciones.

@@ -1,0 +1,15 @@
+{
+ "store":"Jumbo Breda Dr. Struyckenplein","establishment":"Breda Dr. Struyckenplein","date":"2026-10-08","time":"18:25",
+ "items":[
+  {"name":"Recorded product 1","quantity":1,"unit":null,"unit_price":null,"line_total":10,"source":"fixture line 1"},
+  {"name":"Recorded product 2","quantity":1,"unit":null,"unit_price":null,"line_total":10,"source":"fixture line 2"},
+  {"name":"Recorded product 3","quantity":1,"unit":null,"unit_price":null,"line_total":10,"source":"fixture line 3"},
+  {"name":"Recorded product 4","quantity":1,"unit":null,"unit_price":null,"line_total":10,"source":"fixture line 4"},
+  {"name":"Recorded product 5","quantity":1,"unit":null,"unit_price":null,"line_total":10,"source":"fixture line 5"},
+  {"name":"Recorded product 6","quantity":1,"unit":null,"unit_price":null,"line_total":10,"source":"fixture line 6"},
+  {"name":"Recorded product 7","quantity":1,"unit":null,"unit_price":null,"line_total":10,"source":"fixture line 7"},
+  {"name":"Recorded product 8","quantity":1,"unit":null,"unit_price":null,"line_total":11.83,"source":"fixture line 8"}
+ ],
+ "adjustments":[{"kind":"discount","description":"Promotion","amount_cents":-3495,"item_index":null,"source":"Promotion -34,95"}],
+ "total":46.88,"uncertain":[],"warnings":[]
+}

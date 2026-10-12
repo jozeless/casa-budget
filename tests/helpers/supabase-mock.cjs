@@ -1,10 +1,10 @@
 // In-memory Supabase substitute. All mutations affect these fixtures only.
 module.exports=function installMock(seed){
-  const data={purchases:seed.purchases||[],items:seed.items||[],household:{id:'test-home',name:'Casa de prueba',monthly_budget:seed.budget??600,invite_code:'test-invite'}};
+  const data={purchases:seed.purchases||[],items:seed.items||[],purchase_adjustments:seed.adjustments||[],purchase_receipts:seed.receipts||[],household:{id:'test-home',name:'Casa de prueba',monthly_budget:seed.budget??600,invite_code:'test-invite'}};
   const calls=[];const operations=new Map();
   data.purchases.forEach(p=>p.revision??=0);
   let session=seed.signedOut?null:{user:{id:'test-user',email:'test@example.com'},access_token:'synthetic-token'},callback;
-  let nextId=0;
+  let nextId=0;const files=new Map();let extractions=0;
   class Query{
     constructor(table){this.table=table;this.filters=[];this.orders=[];this.operation='read';}
     select(columns){this.columns=columns;return this;}
@@ -31,7 +31,7 @@ module.exports=function installMock(seed){
       }else if(this.operation==='delete'){
         const removed=rows.filter(row=>this.filters.every(filter=>filter(row)));
         data[this.table==='purchase_items'?'items':this.table]=rows.filter(row=>!removed.includes(row));
-        if(this.table==='purchases')data.items=data.items.filter(item=>!removed.some(p=>p.id===item.purchase_id));
+        if(this.table==='purchases'){data.items=data.items.filter(item=>!removed.some(p=>p.id===item.purchase_id));data.purchase_adjustments=data.purchase_adjustments.filter(a=>!removed.some(p=>p.id===a.purchase_id));data.purchase_receipts.forEach(r=>{if(removed.some(p=>p.id===r.purchase_id))r.purchase_id=null;});}
         rows=[];
       }else if(this.operation==='update'){
         rows.filter(row=>this.filters.every(filter=>filter(row))).forEach(row=>Object.assign(row,this.payload));
@@ -54,7 +54,15 @@ module.exports=function installMock(seed){
   }};return query;
  }
  return (async()=>{calls.push({operation:name});
- if(name==='casa_save_purchase'){
+ if(name==='casa_receipt_begin'){
+  const existing=data.purchase_receipts.find(r=>r.id===args.p_id);if(existing)return {data:existing,error:null};
+  const row={id:args.p_id,household_id:args.p_household_id,created_by:'test-user',path:args.p_household_id+'/'+args.p_id+'/original',mime:args.p_mime,bytes:args.p_bytes,status:'upload_pending',created_at:new Date().toISOString()};data.purchase_receipts.push(row);return {data:row,error:null};
+ }
+ if(name==='casa_receipt_cancel'||name==='casa_receipt_forget_file'){
+  const row=data.purchase_receipts.find(r=>r.id===args.p_id);if(!row)return {error:{message:'Missing receipt'}};
+  if(name==='casa_receipt_cancel')row.status='cancelled';else row.path=null;return {data:null,error:null};
+ }
+ if(name==='casa_save_purchase'||name==='casa_save_receipt'){
   if(seed.noMigration)return {data:null,error:{code:'PGRST202',message:'Missing function'}};
   if(seed.delay)await new Promise(resolve=>setTimeout(resolve,seed.delay));
   if(seed.failWrite)return {data:null,error:{code:'42501',message:'Simulated write failure'}};
@@ -63,16 +71,20 @@ module.exports=function installMock(seed){
   if(previous)return previous.signature===signature?{data:JSON.parse(JSON.stringify(previous.result)),error:null}:{data:null,error:{code:'P0001',message:'Different operation payload'}};
   const existing=data.purchases.find(p=>p.id===args.p_purchase_id);
   if(args.p_purchase_id&&(!existing||existing.revision!==args.p_expected_revision))return {data:null,error:{code:'40001',message:'La compra cambió. Vuelve a abrirla antes de editar.'}};
-  if(args.p_items.length&&Math.round(args.p_items.reduce((sum,i)=>sum+i.line_total,0)*100)!==Math.round(args.p_total*100))return {data:null,error:{code:'P0001',message:'Invalid item total'}};
+  if(args.p_items.length&&Math.round(args.p_items.reduce((sum,i)=>sum+i.line_total,0)*100)+(args.p_adjustments||[]).reduce((n,a)=>n+a.amount_cents,0)!==Math.round(args.p_total*100))return {data:null,error:{code:'P0001',message:'Invalid item total'}};
   const purchase={...(existing||{id:'mock-'+(++nextId),household_id:args.p_household_id,created_by:'test-user',created_at:new Date().toISOString()}),store:args.p_store,purchased_on:args.p_date,total:args.p_total,revision:(existing?.revision||0)+1};
   const items=args.p_items.map(item=>({...item,id:'mock-item-'+(++nextId),purchase_id:purchase.id}));
   data.purchases=data.purchases.filter(p=>p.id!==purchase.id).concat(purchase);data.items=data.items.filter(i=>i.purchase_id!==purchase.id).concat(items);
   if(seed.failReadAfterWrite)seed.failRead=true;
-  const result={purchase,items};operations.set(args.p_operation_id,{signature,result:JSON.parse(JSON.stringify(result))});
+  const adjustments=(args.p_adjustments||[]).map(a=>({...a,id:'mock-adjustment-'+(++nextId),purchase_id:purchase.id,item_id:a.item_index===null?null:items[a.item_index]?.id}));data.purchase_adjustments=data.purchase_adjustments.filter(a=>a.purchase_id!==purchase.id).concat(adjustments);if(args.p_receipt_id){const receipt=data.purchase_receipts.find(r=>r.id===args.p_receipt_id);receipt.purchase_id=purchase.id;receipt.status='confirmed';}const result={purchase,items,...(name==='casa_save_receipt'?{adjustments,receipt:args.p_receipt_id?data.purchase_receipts.find(r=>r.id===args.p_receipt_id):undefined}:{})};operations.set(args.p_operation_id,{signature,result:JSON.parse(JSON.stringify(result))});
   if(seed.loseResponse){seed.loseResponse=false;return {data:null,error:{message:'Simulated lost response'}};}
   return {data:JSON.parse(JSON.stringify(result)),error:null};
  }
-seed.noHousehold=false;if(name==='create_my_household'){data.household.name=args.p_name;data.household.monthly_budget=args.p_budget;}return {data:'test-home',error:null};})();},auth:{
+seed.noHousehold=false;if(name==='create_my_household'){data.household.name=args.p_name;data.household.monthly_budget=args.p_budget;}return {data:'test-home',error:null};})();},storage:{from(){return {
+ async upload(path,file){calls.push({operation:'upload'});if(seed.failUpload)return {error:{message:'Simulated upload failure'}};if(files.has(path))return {error:{statusCode:'409'}};files.set(path,file);return {data:{path},error:null};},
+ async createSignedUrl(path){calls.push({operation:'signedUrl'});return {data:{signedUrl:'https://private.example.test/'+encodeURIComponent(path)+'?temporary=1'},error:null};},
+ async remove(paths){calls.push({operation:'removeFile'});if(seed.failRemove)return {error:{message:'Simulated delete failure'}};paths.forEach(path=>files.delete(path));return {data:[],error:null};}
+ };}},functions:{async invoke(name,{body}){calls.push({operation:name});const row=data.purchase_receipts.find(r=>r.id===body.receiptId);if(seed.failExtract)return {data:{error:'OPENAI_ERROR'},error:null};const cached=!!row.result;if(!row.result){extractions++;row.result=seed.extraction;row.status='review';}window.mock.extractions=extractions;return {data:{result:row.result,cached},error:null};}},auth:{
     onAuthStateChange(fn){callback=fn;queueMicrotask(()=>fn('INITIAL_SESSION',session));return {data:{subscription:{unsubscribe(){}}}};},
     async initialize(){return {error:null};},async getSession(){return {data:{session},error:null};},
     async signInWithPassword(){session={user:{id:'test-user',email:'test@example.com'},access_token:'synthetic-token'};callback('SIGNED_IN',session);return {data:{user:session.user},error:null};},

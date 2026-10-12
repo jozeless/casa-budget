@@ -1,0 +1,8 @@
+{
+ "name":"casa-budget",
+ "version":"3.0.0",
+ "private":true,
+ "scripts":{"test":"node --test","test:ui":"node scripts/check-ui.cjs","test:sql":"node scripts/check-sql.cjs","icons":"node scripts/build-icons.cjs"},
+ "engines":{"node":">=22"},
+ "devDependencies":{"pdf-lib":"1.17.1","playwright":"1.62.1"}
+}

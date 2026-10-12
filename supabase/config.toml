@@ -1,0 +1,3 @@
+[functions.extract-receipt]
+# Supports projects using sb_publishable keys. Function itself validates JWT with get-user.
+verify_jwt = false

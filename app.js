@@ -5,7 +5,7 @@ const fmt = n => new Intl.NumberFormat('es-NL', {style:'currency',currency:'EUR'
 const dateLocal = () => {const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
 const safe = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const monthKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-const store = {client:null,user:null,household:null,purchases:[],items:[],selected:null,loaded:false,dataVersion:0,page:'home',historyLimit:50};
+const store = {client:null,user:null,household:null,purchases:[],items:[],adjustments:[],receipts:[],selected:null,loaded:false,dataVersion:0,page:'home',historyLimit:50};
 const analytics=window.CASA_BUDGET;
 let loadTask=null;
 let routeTask=null;
@@ -19,6 +19,16 @@ function pendingWrite(){return JSON.parse(localStorage.getItem(pendingKey())||'n
 function phaseError(error){
   if(error?.code==='PGRST202'||error?.code==='42703')return 'Falta aplicar la migración de Fase 2 en Supabase. Contacta con quien administra CASA.';
   return error?.message||'No se pudo conectar. Intenta nuevamente.';
+}
+const receiptUI=window.CASA_RECEIPT_UI?.({getStore:()=>store,notice:msg=>notice(msg),duplicateApproval,applySaved,reloadAfterWrite,refresh});
+function applySaved(saved){
+ const known=store.purchases.find(p=>p.id===saved.purchase.id);if(known&&Number(known.revision)>Number(saved.purchase.revision))return;
+ store.purchases=store.purchases.filter(p=>p.id!==saved.purchase.id).concat(saved.purchase);
+ store.purchases.sort((a,b)=>b.purchased_on.localeCompare(a.purchased_on)||b.created_at.localeCompare(a.created_at)||b.id.localeCompare(a.id));
+ store.items=store.items.filter(i=>i.purchase_id!==saved.purchase.id).concat(saved.items);
+ store.adjustments=store.adjustments.filter(a=>a.purchase_id!==saved.purchase.id).concat(saved.adjustments||[]);
+ if(saved.receipt)store.receipts=store.receipts.filter(r=>r.id!==saved.receipt.id).concat(saved.receipt);
+ productEpoch++;updateFilters();render();
 }
 let renderedDate=null;
 let calendarTimer;
@@ -35,6 +45,7 @@ function scheduleCalendar(){
 }
 function resumeCalendar(){checkCalendar();scheduleCalendar();}
 function resetDashboard(){
+  receiptUI?.reset();store.adjustments=[];store.receipts=[];if(receiptUI){$('data-adjustments-note').textContent='';$('detail-adjustments').innerHTML='';$('view-receipt').classList.add('hidden');}
   for(const id of ['remaining','spent','budget','settings-budget','weekly-amount'])$(id).textContent='—';
   for(const id of ['purchases-list','store-report','product-report','monthly-report'])$(id).innerHTML='';
   $('purchase-count').textContent='';$('weekly-period').textContent='';$('progress-bar').style.width='0%';
@@ -266,7 +277,17 @@ async function refresh(force=false){
         const ids=purchases.slice(index,index+100).map(p=>p.id);
         items.push(...await paged(()=>store.client.from('purchase_items').select('id,purchase_id,name,quantity,line_total').in('purchase_id',ids).order('id',{ascending:true})));
       }
+      const adjustments=[];
+      if(receiptUI){
+       for(let index=0;index<purchases.length;index+=100){
+        try{adjustments.push(...await paged(()=>store.client.from('purchase_adjustments').select('id,purchase_id,kind,description,amount_cents,item_id').in('purchase_id',purchases.slice(index,index+100).map(p=>p.id)).order('id')));}
+        catch(error){if(['PGRST205','42P01'].includes(error.code))break;throw error;}
+       }
+      }
       if(store.household?.id!==householdId||store.dataVersion!==version)return;
+      let receipts=[];if(receiptUI){try{receipts=await paged(()=>store.client.from('purchase_receipts').select('id,purchase_id,path,status').eq('household_id',householdId).order('id'));}catch(error){if(!['PGRST205','42P01'].includes(error.code))throw error;}}
+      if(store.household?.id!==householdId||store.dataVersion!==version)return;
+      store.adjustments=adjustments;store.receipts=receipts;
       phase2Ready=ready;store.household=household;store.purchases=purchases;store.items=items;store.loaded=true;
       $('home-display').textContent=household.name;$('invite-code').textContent=household.invite_code;
       updateFilters();render();dataStatus(phase2Ready?'Compras actualizadas':'Compras actualizadas. Falta la migración de Fase 2 para guardar o editar compras.');
@@ -345,8 +366,8 @@ function renderHistory(){
 }
 function dataModel(){
   const month=$('data-month').value,budget=store.household.monthly_budget;
-  if(!dataCache||dataCache.month!==month||dataCache.budget!==budget||dataCache.purchases!==store.purchases||dataCache.items!==store.items){
-    dataCache={month,budget,purchases:store.purchases,items:store.items,model:analytics.dataIntelligence(store.purchases,store.items,month,budget)};
+  if(!dataCache||dataCache.month!==month||dataCache.budget!==budget||dataCache.purchases!==store.purchases||dataCache.items!==store.items||dataCache.adjustments!==store.adjustments){
+    dataCache={month,budget,purchases:store.purchases,items:store.items,adjustments:store.adjustments,model:analytics.dataIntelligence(store.purchases,store.items,month,budget,store.adjustments)};
   }
   return dataCache.model;
 }
@@ -381,7 +402,7 @@ function renderData(){
 }
 function dataRows(id,entries,type,empty){
   const max=entries.reduce((n,e)=>Math.max(n,e.total),1);
-  $(id).innerHTML=entries.length?entries.map(entry=>`<button type="button" class="product-link" data-${type}="${safe(entry.key)}"><span class="report-line"><span>${safe(entry.name)}</span><b>${fmt(entry.total/100)}</b></span><span class="hint">${type==='store'?percentage(entry.percentage)+' del gasto del mes':entry.count+(entry.count===1?' compra distinta':' compras distintas')}</span><span class="report-meter" aria-hidden="true"><span style="width:${entry.total>0?Math.max(2,entry.total/max*100):0}%"></span></span></button>`).join(''):`<p class="muted">${empty}</p>`;
+  $(id).innerHTML=entries.length?entries.map(entry=>`<button type="button" class="product-link" data-${type}="${safe(entry.key)}"><span class="report-line"><span>${safe(entry.name)}</span><b>${fmt(entry.total/100)}</b></span><span class="hint">${type==='store'?percentage(entry.percentage)+' del gasto del mes':entry.count+(entry.count===1?' compra distinta':' compras distintas')+(entry.attributed?' · Ajustes atribuibles: '+fmt(entry.attributed/100):'')}</span><span class="report-meter" aria-hidden="true"><span style="width:${entry.total>0?Math.max(2,entry.total/max*100):0}%"></span></span></button>`).join(''):`<p class="muted">${empty}</p>`;
 }
 function renderDataStores(model){
   dataRows('store-report',model.stores.slice(0,dataView.storeLimit),'store','No hay gastos por supermercado en este mes.');
@@ -393,6 +414,7 @@ function renderDataStores(model){
   $('data-store-more').classList.toggle('hidden',!selected||selected.purchases.length<=dataView.purchaseLimit);
 }
 function renderDataProducts(model){
+  if(receiptUI)$('data-adjustments-note').textContent=model.generalAdjustments?'Los productos conservan sus importes brutos. Ajustes generales: '+fmt(model.generalAdjustments/100)+'. No se reparten entre productos; el total pagado puede diferir de su suma.':'Los descuentos atribuibles se muestran separados; los totales generales y por tienda representan lo pagado.';
   const query=analytics.normalize($('data-product-search').value);
   const products=model.products.filter(p=>analytics.normalize(p.name).includes(query));
   $('data-product-count').textContent=`${products.length} productos`;
@@ -442,6 +464,7 @@ function duplicateApproval(){
   });
 }
 function openPurchase(purchase=null){
+  if(receiptUI&&localStorage.getItem(`casa_pending_receipt_${store.user?.id}_${store.household?.id}`))throw Error('Hay una compra de recibo pendiente. Abre Subir recibo y reintenta antes de registrar otra.');
   const pending=pendingWrite();editingPurchase=purchase;
   $('purchase-form').reset();$('items-container').innerHTML='';
   let rows=[];
@@ -521,7 +544,7 @@ async function loadProductHistory(){
 }
 function renderProductHistory(){
   const report=analytics.productHistory(productRows,$('product-month').value);
-  $('product-summary').textContent=`${fmt(report.total/100)} · ${report.count} compras`;
+  $('product-summary').textContent=`${fmt(report.total/100)} · ${report.count} compras`+(receiptUI?' · Importes de producto registrados; consulta descuentos y ajustes en el detalle de cada compra.':'');
   $('product-history').innerHTML=report.lines.length?report.lines.map(row=>`<div class="product-entry"><b>${safe(row.name)}</b><p>${safe(row.purchased_on)} · ${safe(row.store)}</p><p>Cantidad: ${safe(row.quantity)} · Importe pagado: ${fmt(row.line_total)}</p><button type="button" class="secondary" data-original="${row.purchase_id}">Ver compra original</button></div>`).join(''):'<p class="muted">No hay registros para este periodo.</p>';
 }
 $('product-report').onclick=event=>{const button=event.target.closest('[data-product]');if(!button)return;productName=button.dataset.product;$('product-title').textContent=productName;$('product-month').innerHTML=`<option value="${$('data-month').value}">${monthLabel($('data-month').value)}</option>`;$('product-month').value=$('data-month').value;dialog('product-dialog');loadProductHistory();};
@@ -530,9 +553,11 @@ $('product-history').onclick=async event=>{
   const button=event.target.closest('[data-original]');if(!button)return;
   try{await refresh(true);if(!store.purchases.some(p=>p.id===button.dataset.original))throw Error('Esta compra ya no está disponible.');$('product-dialog').close();purchaseDetail(button.dataset.original);}catch(error){notice(phaseError(error));}
 };
-$('edit-purchase').onclick=()=>{try{$('detail-dialog').close();openPurchase(store.selected);}catch(error){notice(phaseError(error));}};
+$('edit-purchase').onclick=async()=>{try{if(receiptUI&&await receiptUI.edit(store.selected))return;$('detail-dialog').close();openPurchase(store.selected);}catch(error){notice(phaseError(error));}};
+if(receiptUI)$('view-receipt').onclick=()=>receiptUI.showOriginal(store.selected).catch(error=>notice(error.message));
 function purchaseDetail(id){const p=store.purchases.find(x=>x.id===id);if(!p)return;store.selected=p;
   $('detail-title').textContent=p.store;$('detail-subtitle').textContent=new Date(p.purchased_on+'T12:00:00').toLocaleDateString('es-ES',{dateStyle:'long'});$('detail-total').textContent=fmt(p.total);
+  if(receiptUI){$('view-receipt').classList.toggle('hidden',!store.receipts.some(r=>r.purchase_id===id&&r.path));$('detail-adjustments').innerHTML=store.adjustments.filter(a=>a.purchase_id===id).map(a=>`<p>${safe(a.description)}: <b>${fmt(a.amount_cents/100)}</b> ${a.item_id?'(atribuible a producto)':'(general)'}</p>`).join('');}
   const its=store.items.filter(i=>i.purchase_id===id);$('detail-items').innerHTML=its.length?its.map(i=>`<div class="detail-item"><span>${safe(i.name)} <span class="muted">×${safe(i.quantity)}</span></span><b>${fmt(i.line_total)}</b></div>`).join(''):'<p class="muted">Esta compra no tiene productos detallados.</p>';dialog('detail-dialog');
 }
 $('config-btn').onclick=openConfig;
@@ -625,7 +650,7 @@ $('delete-purchase').onclick=async()=>{
     const r=await store.client.from('purchases').delete().eq('id',purchase.id);if(r.error)throw r.error;
     if(store.household?.id!==householdId||store.user?.id!==userId)return;
     store.purchases=store.purchases.filter(p=>p.id!==purchase.id);
-    store.items=store.items.filter(i=>i.purchase_id!==purchase.id);store.selected=null;productEpoch++;
+    store.items=store.items.filter(i=>i.purchase_id!==purchase.id);store.adjustments=store.adjustments.filter(a=>a.purchase_id!==purchase.id);store.selected=null;productEpoch++;
     updateFilters();render();$('detail-dialog').close();await reloadAfterWrite('Compra eliminada');
   }catch(e){fail(e);}finally{button.disabled=false;}
 };

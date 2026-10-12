@@ -1,5 +1,5 @@
-const CACHE = 'casa-shell-v7-data26';
-const SHELL = ['./','./index.html','./styles.css','./app.js','./budget.js','./config.js','./manifest.webmanifest','./icon.svg'];
+const CACHE = 'casa-shell-v8-smart30';
+const SHELL = ['./','./index.html','./styles.css','./app.js','./budget.js','./config.js','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png','./receipt.js','./supabase/functions/_shared/receipt-core.js'];
 const shellUrls = new Set(SHELL.map(path=>new URL(path,self.registration.scope).href));
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'})))));

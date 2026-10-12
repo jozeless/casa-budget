@@ -8,7 +8,7 @@ Una app móvil de gastos del supermercado para dos personas, con Supabase (login
 - **Historial:** filtro de mes o todos los meses, supermercado y búsqueda por supermercado o productos registrados. Detalles, edición atómica y eliminación con confirmación.
 - **Data:** Resumen, Tiendas y Productos comparten mes y año. Indicadores, gasto por tienda y producto, y evolución mensual/semanal real. Las compras sin productos detallados no se asignan a productos ni categorías inventadas.
 - **Settings:** nombre del hogar, presupuesto, invitación privada, cuenta, configuración pública de Supabase y cierre de sesión.
-- **Añadir (+):** compra manual desde cualquier vista. Subir recibos permanece desactivado.
+- **Añadir (+):** compra manual desde cualquier vista. Subir recibo abre lectura privada con OpenAI y revisión humana, tras configuración manual de servidor.
 
 La recomendación semanal divide el saldo positivo del mes entre los días restantes (incluido hoy) y lo multiplica por los días desde hoy hasta el domingo, recortados al final del mes. Usa días de calendario locales, semanas lunes-domingo e importes en céntimos. Un saldo negativo se muestra como tal y recomienda cero. No arrastra presupuesto ni gastos de otros meses.
 
@@ -94,7 +94,7 @@ Encabezado compacto con icono provisional, CASA y botón accesible de actualizac
 La barra representa presupuesto disponible: verde por encima del 60%, naranja por encima del 30% hasta el 60%, rojo del 0% al 30%. Se limita entre 0% y 100%; saldo negativo y presupuesto cero muestran barra vacía y estado rojo. El presupuesto cero incluye una explicación. La transición respeta movimiento reducido. No requiere cambios de base de datos.
 
 
-## CASA 2.6 — Data Intelligence
+## CASA 3.0 — Data Intelligence
 
 - **Resumen:** gasto del mes, compras distintas, ticket promedio y presupuesto utilizado sin limitarlo al 100%. Sin compras, el ticket muestra «Sin compras»; con presupuesto cero, el porcentaje muestra «No aplicable». Los meses históricos se comparan expresamente con el presupuesto vigente, porque CASA no almacena presupuestos históricos.
 - **Evolución mensual:** seis meses consecutivos terminando en el mes elegido, con ceros cuando no hay compras. **Semanal:** semanas lunes–domingo que intersectan ese mes; solo se suma gasto perteneciente al mes elegido, incluso cuando una semana cruza meses o años. No utiliza la recomendación semanal de Inicio.
@@ -104,3 +104,13 @@ La barra representa presupuesto disponible: verde por encima del 60%, naranja po
 - Las agregaciones se reutilizan mientras no cambien período, compras, líneas o presupuesto. Cambiar pestaña, buscar o seleccionar tienda no consulta Supabase. Actualizar preserva pestaña, búsqueda y período; el cambio de sesión limpia el análisis y los filtros. Los avisos de posible desactualización permanecen visibles.
 
 No requiere SQL ni cambios en RLS, configuración, autenticación o RPC de escritura. Las pruebas de navegador usan fixtures y bloquean las conexiones a Supabase. Las pruebas de SQL, si se ejecutan, utilizan PostgreSQL desechable y no el proyecto real.
+
+## CASA 3.0 — Recibos inteligentes
+
+JPEG/PNG/WebP o PDF seguro de una página → Storage privado → Edge Function → extracción estructurada → revisión editable → confirmación transaccional. Nunca se guarda automáticamente. Descuentos y ajustes se registran aparte; 81,83 − 34,95 = 46,88 €. Data conserva importes de productos, distingue ajustes atribuibles y explica promociones generales. Settings permite limpieza manual de imágenes sin borrar compras.
+
+**Activación necesaria:** [guía paso a paso Supabase/OpenAI/Android](docs/CASA-3.0-SETUP.md). Incluye respaldo y migración independiente; esta rama no ejecuta SQL ni despliega funciones. No requiere ni admite claves OpenAI en config.js. Si falta el servidor nuevo, las compras manuales existentes siguen disponibles.
+
+Pruebas: `node --test`, `node scripts/check-ui.cjs`, `node scripts/check-sql.cjs`. Node requiere `pdf-lib` para pruebas PDF; Playwright/Chromium para interfaz; Docker/PostgreSQL 17 para SQL aislado. Las pruebas usan mocks, claves sintéticas y bases desechables. No consumen OpenAI ni consultan Supabase real. Los nombres del fixture Jumbo son sintéticos; sus importes reproducen el caso solicitado. Validar el recibo original y Android real antes de activar.
+
+`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y cache v8 incluyen ambos PNG y los módulos nuevos.
