@@ -27,14 +27,14 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: jozeless/casa-budget
-          ref: 284d5d7444f8df7d604a04c188ad52cbfc73aa7f
+          ref: 8f304759a44187666e5b3e6cb6d153a18dee7c35
           path: casa-3-source
           persist-credentials: false
 
       - name: Verify source and function configuration
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "284d5d7444f8df7d604a04c188ad52cbfc73aa7f"
+          test "$(git rev-parse HEAD)" = "8f304759a44187666e5b3e6cb6d153a18dee7c35"
           python3 - <<'PY'
           from pathlib import Path
           import tomllib
