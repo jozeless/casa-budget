@@ -113,6 +113,20 @@ JPEG/PNG/WebP o PDF seguro de una página → Storage privado → Edge Function 
 
 Pruebas: `node --test`, `node scripts/check-ui.cjs`, `node scripts/check-sql.cjs`. Node requiere `pdf-lib` para pruebas PDF; Playwright/Chromium para interfaz; Docker/PostgreSQL 17 para SQL aislado. Las pruebas usan mocks, claves sintéticas y bases desechables. No consumen OpenAI ni consultan Supabase real. Los nombres del fixture Jumbo son sintéticos; sus importes reproducen el caso solicitado. Validar el recibo original y Android real antes de activar.
 
-`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y caché v10 incluyen ambos PNG y los módulos de recibos; el shell se actualiza como conjunto completo.
+`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y caché v11 incluyen ambos PNG y los módulos de recibos; el shell se actualiza como conjunto completo.
 
 La revisión de recibos usa productos compactos desplegables. La extracción distingue unidades explícitas/propuestas/inciertas y ajustes contables de información ya incluida o posterior al total. El resultado antiguo sigue siendo legible; no hay migración SQL nueva. El botón **Volver a cargar módulo** recupera una carga fallida sin enviar imágenes. Consultar en la [guía de activación](docs/CASA-3.0-SETUP.md) el nuevo esquema de extracción, los límites pendientes y el pin del workflow de despliegue.
+
+## CASA 3.1 — Revisión de recibos simplificada
+
+- **Añadir recibo:** «Seleccionar y analizar recibo» o «Tomar una foto» inicia el análisis habitual al seleccionar el archivo. Se indica antes que se enviará a OpenAI; seleccionar no guarda una compra. Los formatos y límites anteriores siguen vigentes.
+- **Revisión:** supermercado, fecha escrita con mes y año, número de productos, total pagado y descuento aplicado. Los productos siguen compactos y desplegables mediante teclado o pulsación; las propuestas e incertidumbres conservan el aviso naranja «Revisar».
+- **Opciones avanzadas:** cerradas inicialmente cuando los importes cuadran y sus campos son válidos. Reúnen edición de supermercado/fecha/total, ajustes compactos, atribuciones, información secundaria y acceso al original. Los avisos obligatorios permanecen fuera; un botón abre y enfoca el campo pendiente. La validación nativa también abre los campos ocultos que necesitan corrección.
+- **Confirmación:** casilla «He revisado los productos y los importes», guardado y cancelación en un pie separado del área desplazable. Se reserva espacio para ese pie y el área segura; la altura se adapta al viewport visual. La casilla no sustituye la conciliación: un descuadre o datos inválidos mantienen el guardado bloqueado.
+- **Recuperación:** «Consultar estado / reintentar» conserva el flujo existente. Recuperar un resultado almacenado no vuelve a extraerlo. Los guardados pendientes conservan el identificador de operación y no crean otra compra al reintentar. Tras abrir de nuevo se limpia la selección de archivo para poder elegir el mismo recibo sin depender de un cambio de nombre.
+
+Caché del shell: `casa-shell-v11-receipt-ux`, instalada como conjunto completo. El identificador de recuperación del módulo compartido sigue siendo `v10`, ya que su API no ha cambiado. No se modifican Edge Function, modelo/prompt, SQL, RPC, reglas contables, autenticación ni otras pantallas.
+
+Pruebas de CASA 3.1: `npm test`, `npm run test:ui` y `npm run test:sql`. La interfaz comprueba PNG/JPG/WebP, PDF compatible y selección de cámara con archivos locales; el servidor, Storage y OpenAI se simulan. Incluye el fixture Jumbo (81,83 − 34,95 = 46,88 €, con 0,45 € informativos), recuperación sin extracción adicional, avisos avanzados, edición, idempotencia, errores, teclado, cuatro tamaños de escritorio/móvil y viewport reducido. SQL se prueba únicamente en PostgreSQL 17 desechable con identidades de prueba. No equivalen a una prueba en producción.
+
+Pendiente de validación manual: cámara física, teclado y áreas seguras en Android/iOS, lectores de pantalla reales y análisis de documentos reales. Las pruebas automatizadas no llaman a OpenAI ni a Supabase real. Para recibir el nuevo shell en una PWA instalada, abrir con conexión y volver a abrir/recargar; una pestaña ya abierta conserva su interfaz hasta recargarse.
