@@ -1,6 +1,14 @@
 /* Pure calendar and reporting helpers; never writes to Supabase. */
 (function(root){
   'use strict';
+  // Only a supermarket field is passed here; unknown names are returned verbatim.
+  function supermarketName(value){
+    const name=String(value??'').trim().replace(/\s+/g,' ');
+    const prefix='^(?:(?:supermarkt|supermercado) )?';
+    if(new RegExp(prefix+'jumbo(?=$|[\\s,.:()/\\-])','i').test(name))return 'Jumbo';
+    if(new RegExp(prefix+'(?:albert heijn|ah)(?=$|[\\s,.:()/\\-])','i').test(name))return 'Albert Heijn';
+    return value;
+  }
   const cents=value=>Math.round(Number(value||0)*100);
   const monthKey=date=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
   const inMonth=(purchases,month)=>purchases.filter(p=>p.purchased_on.slice(0,7)===month);
@@ -84,7 +92,7 @@
     for(const key of [...purchases.map(p=>p.purchased_on.slice(0,7)),...(previous?[previous]:[])]){first=Math.min(first,index(key));last=Math.max(last,index(key));}
     return Array.from({length:last-first+1},(_,i)=>{const value=last-i;return `${String(Math.floor(value/12)).padStart(4,'0')}-${String(value%12+1).padStart(2,'0')}`;});
   }
-  const api={dataMonths,storeKey,weeklySpending,dataIntelligence,remainingBudget,productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
+  const api={supermarketName,dataMonths,storeKey,weeklySpending,dataIntelligence,remainingBudget,productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   else root.CASA_BUDGET=api;
 })(typeof window!=='undefined'?window:globalThis);
