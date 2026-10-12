@@ -498,11 +498,12 @@ async function savePurchase(ev){
     if(operation){
       const {p_operation_id,...original}=operation.params;
       // A lost response must be retried with exactly the original request, even after reload.
-      if(JSON.stringify({...payload,p_expected_revision:original.p_expected_revision})!==JSON.stringify(original))throw Error('Hay un guardado pendiente. Reintenta con los datos originales antes de cambiarlos.');
+      if(JSON.stringify({...payload,p_store:storeName===original.p_store?storeName:analytics.supermarketName(storeName),p_expected_revision:original.p_expected_revision})!==JSON.stringify(original))throw Error('Hay un guardado pendiente. Reintenta con los datos originales antes de cambiarlos.');
     }else{
+      payload.p_store=analytics.supermarketName(storeName);
       if(!editingPurchase){
         const candidates=await paged(()=>store.client.from('purchases').select('id,store,total').eq('household_id',householdId).eq('purchased_on',date).eq('total',total).order('id'));
-        if(candidates.some(p=>analytics.productKey(p.store)===analytics.productKey(storeName))&&!await duplicateApproval())return;
+        if(candidates.some(p=>analytics.productKey(analytics.supermarketName(p.store))===analytics.productKey(payload.p_store))&&!await duplicateApproval())return;
       }
       operation={params:{...payload,p_operation_id:window.crypto.randomUUID()}};
       // Persist before sending; if storage fails, do not risk an untrackable write.

@@ -138,10 +138,11 @@ window.CASA_RECEIPT_UI=function({getStore,notice,duplicateApproval,applySaved,re
  try{
   const params={p_household_id:home,p_purchase_id:editing?.id||null,p_expected_revision:editing?.revision??null,p_store:value.store,p_date:value.date,p_total:value.total,p_items:value.items,p_adjustments:value.adjustments.filter(a=>a.effect==='applies_to_total').map(({effect,...adjustment})=>adjustment),p_receipt_id:receipt?.id||null};
   op=JSON.parse(localStorage.getItem(storageKey)||'null');
-  if(op){const {p_operation_id,...previous}=op;if(JSON.stringify({...params,p_expected_revision:previous.p_expected_revision})!==JSON.stringify(previous))throw Error('Hay un guardado pendiente. Reintenta con los datos originales.');}
+  if(op){const {p_operation_id,...previous}=op;if(JSON.stringify({...params,p_store:value.store===previous.p_store?value.store:window.CASA_BUDGET.supermarketName(value.store),p_expected_revision:previous.p_expected_revision})!==JSON.stringify(previous))throw Error('Hay un guardado pendiente. Reintenta con los datos originales.');}
   else{
+   params.p_store=window.CASA_BUDGET.supermarketName(value.store);
    if(!editing){let from=0,candidates=[];while(true){const r=await s.client.from('purchases').select('id,store').eq('household_id',home).eq('purchased_on',value.date).eq('total',value.total).order('id').range(from,from+199);if(r.error)throw r.error;candidates.push(...r.data);if(r.data.length<200)break;from+=200;}
-    if(candidates.some(p=>window.CASA_BUDGET.productKey(p.store)===window.CASA_BUDGET.productKey(value.store))&&!await duplicateApproval())return;}
+    if(candidates.some(p=>window.CASA_BUDGET.productKey(window.CASA_BUDGET.supermarketName(p.store))===window.CASA_BUDGET.productKey(params.p_store))&&!await duplicateApproval())return;}
    op={...params,p_operation_id:crypto.randomUUID()};localStorage.setItem(storageKey,JSON.stringify(op));
   }
   const result=await s.client.rpc('casa_save_receipt',op);
