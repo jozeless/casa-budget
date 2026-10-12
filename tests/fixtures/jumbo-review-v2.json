@@ -1,0 +1,104 @@
+{
+  "store": "Jumbo Breda Dr. Struyckenplein",
+  "establishment": "Breda Dr. Struyckenplein",
+  "date": "2026-10-08",
+  "time": "18:25",
+  "items": [
+    {
+      "name": "Recorded product 1",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 10,
+      "source": "fixture line 1",
+      "quantity_basis": "single_unit"
+    },
+    {
+      "name": "Recorded product 2",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 10,
+      "source": "fixture line 2",
+      "quantity_basis": "single_unit"
+    },
+    {
+      "name": "Recorded product 3",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 10,
+      "source": "fixture line 3",
+      "quantity_basis": "single_unit"
+    },
+    {
+      "name": "Recorded product 4",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 10,
+      "source": "fixture line 4",
+      "quantity_basis": "single_unit"
+    },
+    {
+      "name": "Recorded product 5",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 10,
+      "source": "fixture line 5",
+      "quantity_basis": "single_unit"
+    },
+    {
+      "name": "Recorded product 6",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 10,
+      "source": "fixture line 6",
+      "quantity_basis": "single_unit"
+    },
+    {
+      "name": "Recorded product 7",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 10,
+      "source": "fixture line 7",
+      "quantity_basis": "single_unit"
+    },
+    {
+      "name": "Recorded product 8",
+      "quantity": null,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 11.83,
+      "source": "fixture line 8",
+      "quantity_basis": "single_unit"
+    }
+  ],
+  "adjustments": [
+    {
+      "kind": "discount",
+      "description": "ACTIE VLEESVERVANGER",
+      "amount_cents": -3495,
+      "item_index": null,
+      "source": "ACTIE VLEESVERVANGER -34,95",
+      "effect": "applies_to_total",
+      "position": "before_total"
+    },
+    {
+      "kind": "return",
+      "description": "Ret Emballage Gekoppeld",
+      "amount_cents": 45,
+      "item_index": null,
+      "source": "Ret Emballage Gekoppeld €0,45",
+      "effect": "applies_to_total",
+      "position": "after_total"
+    }
+  ],
+  "total": 46.88,
+  "uncertain": [],
+  "warnings": [],
+  "schema_version": 2
+}
