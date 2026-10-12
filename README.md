@@ -113,4 +113,6 @@ JPEG/PNG/WebP o PDF seguro de una página → Storage privado → Edge Function 
 
 Pruebas: `node --test`, `node scripts/check-ui.cjs`, `node scripts/check-sql.cjs`. Node requiere `pdf-lib` para pruebas PDF; Playwright/Chromium para interfaz; Docker/PostgreSQL 17 para SQL aislado. Las pruebas usan mocks, claves sintéticas y bases desechables. No consumen OpenAI ni consultan Supabase real. Los nombres del fixture Jumbo son sintéticos; sus importes reproducen el caso solicitado. Validar el recibo original y Android real antes de activar.
 
-`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y cache v8 incluyen ambos PNG y los módulos nuevos.
+`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y caché v10 incluyen ambos PNG y los módulos de recibos; el shell se actualiza como conjunto completo.
+
+La revisión de recibos usa productos compactos desplegables. La extracción distingue unidades explícitas/propuestas/inciertas y ajustes contables de información ya incluida o posterior al total. El resultado antiguo sigue siendo legible; no hay migración SQL nueva. El botón **Volver a cargar módulo** recupera una carga fallida sin enviar imágenes. Consultar en la [guía de activación](docs/CASA-3.0-SETUP.md) el nuevo esquema de extracción, los límites pendientes y el pin del workflow de despliegue.

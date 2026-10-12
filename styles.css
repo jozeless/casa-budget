@@ -209,3 +209,16 @@ code { color: var(--accent); }
 #receipt-original { display:block; overflow-wrap:anywhere; }
 
 #receipt-preview { display:block; width:100%; max-height:280px; object-fit:contain; background:var(--surface2); }
+
+/* Receipt products: native keyboard-accessible disclosure rows, scoped to review. */
+#receipt-items { gap:6px; }
+#receipt-items .receipt-product { padding:0; }
+#receipt-items summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; cursor:pointer; padding:10px 12px; min-height:44px; }
+#receipt-items summary::after { content:'Editar ▾'; font-size:12px; color:var(--accent); grid-column:2; grid-row:2; }
+#receipt-items details[open] summary::after { content:'Cerrar ▴'; }
+#receipt-items .r-summary-name { font-weight:600; overflow-wrap:anywhere; }
+#receipt-items .r-summary-values { font-size:13px; grid-column:1; color:var(--muted); }
+#receipt-items .r-review-mark { grid-column:2; grid-row:1; color:#FFB84D; font-size:12px; }
+#receipt-items .needs-review { border-color:#FFB84D; }
+#receipt-items .receipt-product-editor { padding:12px; border-top:1px solid var(--line); }
+#receipt-items summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--radius-sm); }

@@ -101,3 +101,25 @@ Chromium de escritorio/CDP y validación de manifiesto ayudan, pero no sustituye
 ## Entorno reproducible de desarrollo
 
 Node 22 o superior: ejecutar `npm ci --ignore-scripts`. Instalar Chromium de sistema o indicar su binario con `CHROMIUM_PATH`; Playwright se instala como dependencia de desarrollo. `npm test`, `npm run test:ui` y `npm run test:sql` (este último requiere Docker y la imagen postgres:17). Para tipos del servidor: Deno 2, `deno check --no-lock --node-modules-dir=manual supabase/functions/extract-receipt/index.ts` después de npm ci. No hace falta ninguna clave real.
+
+## Corrección de interpretación y revisión (schema de extracción 2)
+
+La revisión usa filas compactas desplegables (teclado Enter/Espacio), muestra nombre/cantidad/subtotal y señala campos pendientes. Añadir abre y enfoca el editor; quitar exige confirmación.
+
+La extracción pide una base explícita de cantidad: `explicit`, `single_unit` o `uncertain`. Una línea individual legible, con texto fuente y sin evidencia contradictoria de multiplicador/peso, puede proponer 1; hay que revisarla. Cantidades inciertas permanecen vacías y bloquean el guardado. Un subtotal impreso NO se multiplica de nuevo por la cantidad. Si falta un importe, se muestra suma parcial y diferencia pendiente, nunca un cero inventado.
+
+Cada descuento/depósito/devolución distingue `applies_to_total`, `already_included`, `informational` o `uncertain`, y su posición respecto al total pagado. Solo los que afectan al total se envían a la RPC. Los demás siguen visibles y se conservan en el JSON de extracción; no se convierten en productos ni ajustes ficticios. La inclusión incierta debe resolverse antes de guardar. Para el caso Jumbo confirmado, la promoción ACTIE VLEESVERVANGER resta 34,95 € y el texto Ret Emballage Gekoppeld posterior al total es información vinculada: 81,83 − 34,95 = 46,88 €. No se aplica esa exclusión a cualquier depósito/devolución ni a una línea de posición desconocida. Tampoco se decide qué excluir únicamente porque así cuadren las cifras.
+
+Los resultados antiguos de extracción siguen siendo legibles. Si no registraron evidencia de cantidad o posición, no se adivina: corregir manualmente. Consultar un resultado existente no vuelve a llamar a OpenAI. Las compras ya guardadas no se reescriben. No hay SQL/migración nueva.
+
+### Caché y primera carga
+
+Se conserva `.nojekyll` y el orden síncrono core → receipt.js → app.js. La caché v10 instala los 12 archivos completos antes de activarse; una descarga fallida conserva la versión anterior y elimina la actualización parcial. El shell instalado se sirve como conjunto coherente; config.js mantiene lectura de red sin caché HTTP. No se recargan automáticamente revisiones sin guardar.
+
+Si el módulo falta o es de una versión incompatible, no se ejecuta inspectFile: la pantalla ofrece **Volver a cargar módulo**. Esta acción solicita únicamente el script público de CASA con una URL de recuperación; no envía imágenes, no crea compras y no llama a OpenAI. Un error de descarga, timeout o versión incompatible produce un mensaje específico y permite reintentar. Una PWA que todavía ejecute una página anterior a esta corrección debe cerrarse y reabrirse/recargarse; código ya ejecutado de una versión antigua no se reemplaza por sí solo.
+
+### Activación pendiente y límites
+
+La mejora del prompt requiere desplegar MANUALMENTE la Edge Function desde el commit aprobado de esta corrección, después de actualizar/verificar el frontend. El workflow actual está fijado al commit 284d5d7: ejecutarlo sin actualizar su SHA NO desplegaría el prompt nuevo. Revisar ese pin en un cambio de infraestructura autorizado, o seguir el despliegue CLI manual desde el checkout aprobado. No desplegar ni ejecutar SQL durante las pruebas de esta rama.
+
+No se ha probado OCR real contra OpenAI ni Android físico en esta corrección. Los fixtures reproducen cifras/contexto con nombres sintéticos. Verificar el recibo original de Jumbo y fotografías/recibos ambiguos tras una activación autorizada. Se conservan los límites de cantidades de dos decimales y de total positivo. La interpretación del modelo puede fallar; lectura del original, revisión humana y conciliación siguen siendo obligatorias.
