@@ -20,11 +20,11 @@ test('real deposits/returns are not universally discarded, whether before or aft
  }
  const v=structuredClone(reference);v.adjustments[1].position='before_total';v.total+=0.45;assert.equal(draft(v).adjustments[1].effect,'applies_to_total');assert(core.reconcile(draft(v)).valid);
 });
-test('already included promotions are not counted twice; uncertainty cannot be acknowledged away',()=>{
- const v=structuredClone(reference);v.items=[{...v.items[0],line_total:46.88}];v.adjustments[0].effect='already_included';const d=draft(v);assert(core.reconcile(d).valid);d.adjustments[0].effect='applies_to_total';assert(!core.reconcile(d).valid);d.adjustments[0].effect='uncertain';assert(!core.reconcile(d).valid);
+test('already-included promotions stay separate; uncertainty cannot be acknowledged away',()=>{
+ const v=structuredClone(reference);v.items=[{...v.items[0],line_total:46.88}];v.adjustments[0].effect='already_included';const d=draft(v);assert(core.reconcile(d).valid);d.adjustments[0].effect='applies_to_total';assert(core.reconcile(d).valid);assert.equal(core.reconcile(d).calculated,1193);d.adjustments[0].effect='uncertain';assert(!core.reconcile(d).valid);
 });
-test('a cent mismatch remains blocked; normalization never manufactures a balancing adjustment',()=>{
- const v=structuredClone(reference);v.total=46.89;const d=draft(v);assert.equal(d.adjustments.length,2);assert.equal(core.reconcile(d).difference,1);assert(!core.reconcile(d).valid);
+test('a cent difference is informational; normalization never manufactures a balancing adjustment',()=>{
+ const v=structuredClone(reference);v.total=46.89;const d=draft(v);assert.equal(d.adjustments.length,2);assert.equal(core.reconcile(d).difference,1);assert(core.reconcile(d).valid);
 });
 test('legacy cached results remain readable without inferring missing quantities or classifying unknown positions',()=>{
  const v=structuredClone(legacy);v.items[0].quantity=null;const d=draft(v);assert.equal(d.items[0].quantity,null);assert.equal(d.adjustments[0].effect,'applies_to_total');assert(!core.reconcile(d).valid);assert(core.reconcile(draft(legacy)).valid);

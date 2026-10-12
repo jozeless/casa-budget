@@ -83,7 +83,6 @@
           <div id="receipt-items" class="stack"></div>
           <button id="receipt-add-item" class="text-button" type="button">Añadir producto</button>
           <p id="receipt-uncertain" class="receipt-warning"></p>
-          <p id="receipt-amount-status" class="hint" role="status"></p>
           <p id="receipt-validation" class="receipt-warning" role="status"></p>
           <details id="receipt-advanced">
             <summary>Opciones avanzadas</summary>
@@ -97,16 +96,17 @@
               <a id="receipt-original" class="text-button hidden" target="_blank" rel="noopener noreferrer">Ver recibo original (enlace temporal)</a>
               <img id="receipt-preview" class="hidden" alt="Recibo original para revisar">
               <p id="receipt-meta" class="hint"></p>
-              <p class="hint">Total calculado: <b id="receipt-calculated"></b> · Diferencia: <b id="receipt-difference"></b></p>
+              <p id="receipt-amount-status" class="hint" role="status"></p>
+              <p class="hint">Suma informativa de líneas y ajustes: <b id="receipt-calculated"></b> · Diferencia: <b id="receipt-difference"></b></p>
               <div id="receipt-advanced-tools"></div>
             </div>
           </details>
         </section>
       </div>
       <footer class="receipt-confirmation">
-        <label id="receipt-review-check" class="receipt-check hidden"><input id="receipt-reviewed" type="checkbox" required>He revisado los productos y los importes</label>
+        <label id="receipt-review-check" class="receipt-check hidden"><input id="receipt-reviewed" type="checkbox" required>He revisado los productos y el total pagado</label>
         <div class="receipt-footer-buttons">
-          <button id="receipt-confirm" class="primary hidden" type="submit" disabled>Confirmar y guardar compra</button>
+          <button id="receipt-confirm" class="primary hidden" type="submit" disabled>Guardar compra</button>
           <button id="receipt-cancel" class="text-button" type="button">Cancelar</button>
         </div>
       </footer>

@@ -24,8 +24,8 @@ function reconcile(draft){
   if(!kinds.includes(a.kind)||typeof a.description!=='string'||!a.description.trim()||a.description.trim().length>160||!Number.isSafeInteger(a.amount_cents)||Math.abs(a.amount_cents)>999999999999||(a.item_index!==null&&(!Number.isInteger(a.item_index)||a.item_index<0||a.item_index>=items.length))){errors.push('Revisa los ajustes y su producto asociado.');complete=false;}else sum+=a.amount_cents;
  });
  const difference=complete&&money(draft.total)?cents(draft.total)-sum:null;
- if((items.length||adjustments.length)&&difference!==null&&difference!==0)errors.push('Productos y ajustes no coinciden con el total pagado.');
- if(((draft.uncertain||[]).length||(draft.warnings||[]).length)&&!draft.reviewed)errors.push('Confirma que has revisado los campos inciertos.');
+ // The human-reviewed paid total is authoritative; line arithmetic is diagnostic only.
+ if(!draft.reviewed)errors.push('Confirma que has revisado los productos y el total pagado.');
  return {valid:errors.length===0,errors:[...new Set(errors)],calculated:sum,difference,complete};
 }
 const nullable=type=>({type:[type,'null']});

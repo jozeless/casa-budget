@@ -414,7 +414,7 @@ function renderDataStores(model){
   $('data-store-more').classList.toggle('hidden',!selected||selected.purchases.length<=dataView.purchaseLimit);
 }
 function renderDataProducts(model){
-  if(receiptUI)$('data-adjustments-note').textContent=model.generalAdjustments?'Los productos conservan sus importes brutos. Ajustes generales: '+fmt(model.generalAdjustments/100)+'. No se reparten entre productos; el total pagado puede diferir de su suma.':'Los descuentos atribuibles se muestran separados; los totales generales y por tienda representan lo pagado.';
+  if(receiptUI)$('data-adjustments-note').textContent='Importes registrados de productos: pueden ser anteriores a descuentos generales y no tienen por qué sumar el gasto pagado.'+(model.generalAdjustments?' Ajustes generales: '+fmt(model.generalAdjustments/100)+'. No se reparten entre productos.':'');
   const query=analytics.normalize($('data-product-search').value);
   const products=model.products.filter(p=>analytics.normalize(p.name).includes(query));
   $('data-product-count').textContent=`${products.length} productos`;
@@ -544,8 +544,8 @@ async function loadProductHistory(){
 }
 function renderProductHistory(){
   const report=analytics.productHistory(productRows,$('product-month').value);
-  $('product-summary').textContent=`${fmt(report.total/100)} · ${report.count} compras`+(receiptUI?' · Importes de producto registrados; consulta descuentos y ajustes en el detalle de cada compra.':'');
-  $('product-history').innerHTML=report.lines.length?report.lines.map(row=>`<div class="product-entry"><b>${safe(row.name)}</b><p>${safe(row.purchased_on)} · ${safe(row.store)}</p><p>Cantidad: ${safe(row.quantity)} · Importe pagado: ${fmt(row.line_total)}</p><button type="button" class="secondary" data-original="${row.purchase_id}">Ver compra original</button></div>`).join(''):'<p class="muted">No hay registros para este periodo.</p>';
+  $('product-summary').textContent=`${fmt(report.total/100)} · ${report.count} compras`+(receiptUI?' · Importe registrado del producto; puede ser anterior a descuentos generales y no sumar el gasto pagado; consulta descuentos y ajustes en el detalle de cada compra.':'');
+  $('product-history').innerHTML=report.lines.length?report.lines.map(row=>`<div class="product-entry"><b>${safe(row.name)}</b><p>${safe(row.purchased_on)} · ${safe(row.store)}</p><p>Cantidad: ${safe(row.quantity)} · Importe registrado del producto: ${fmt(row.line_total)}</p><button type="button" class="secondary" data-original="${row.purchase_id}">Ver compra original</button></div>`).join(''):'<p class="muted">No hay registros para este periodo.</p>';
 }
 $('product-report').onclick=event=>{const button=event.target.closest('[data-product]');if(!button)return;productName=button.dataset.product;$('product-title').textContent=productName;$('product-month').innerHTML=`<option value="${$('data-month').value}">${monthLabel($('data-month').value)}</option>`;$('product-month').value=$('data-month').value;dialog('product-dialog');loadProductHistory();};
 $('product-month').onchange=renderProductHistory;$('product-retry').onclick=loadProductHistory;

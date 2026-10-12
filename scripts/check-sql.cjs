@@ -11,6 +11,16 @@ const sql=file=>docker(['exec','-i',name,'psql','-U','postgres','-v','ON_ERROR_S
  if(!ready)throw Error('PostgreSQL did not start');
  sql('tests/sql/bootstrap.sql');sql('tests/sql/receipts-bootstrap.sql');sql('schema.sql');docker(['exec',name,'psql','-U','postgres','-v','ON_ERROR_STOP=1','-c','grant select,insert,update,delete on all tables in schema public to authenticated;']);
  sql('migrations/20261009_phase_2.sql');sql('migrations/20261009_phase_2.sql');sql('tests/sql/phase-2.sql');sql('migrations/20261010_smart_receipts.sql');sql('migrations/20261010_smart_receipts.sql');sql('tests/sql/receipts.sql');
+ sql('tests/sql/paid-total-before.sql');
+ const historicalTables=['households','household_members','purchases','purchase_items','purchase_adjustments','purchase_receipts','purchase_operations','receipt_attempts'];
+ const snapshot=()=>query("select jsonb_build_object("+historicalTables.map(table=>"'"+table+"',(select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text),'[]'::jsonb) from public."+table+" t)").join(',')+")::text");
+ const permissions=()=>query("select jsonb_agg(jsonb_build_object('oid',p.oid,'owner',p.proowner,'acl',p.proacl,'definer',p.prosecdef,'config',p.proconfig) order by p.oid)::text from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('casa_save_receipt','casa_save_purchase')");
+ const historical=(await snapshot()).stdout,grants=(await permissions()).stdout;
+ for(let application=0;application<2;application++){
+  sql('migrations/20261012_paid_total.sql');assert.equal((await snapshot()).stdout,historical,'migration must not modify any historical row or operation');assert.equal((await permissions()).stdout,grants,'function privileges and security configuration must remain identical');
+ }
+ sql('tests/sql/paid-total.sql');
+ console.log('CASA 3.2: migration twice preserves all historical rows/operations/grants; paid totals, manual equality, validation, rollback, household permissions and legacy UUID replay passed.');
  const prefix="set role authenticated;set request.jwt.claim.sub='00000000-0000-0000-0000-000000000001';";
  const op='20000000-0000-0000-0000-000000000001',home='10000000-0000-0000-0000-000000000001';
  const call=prefix+`select public.casa_save_purchase('${op}','${home}',null,null,'Concurrent','2026-10-02',10,'[]');`;
@@ -18,9 +28,9 @@ const sql=file=>docker(['exec','-i',name,'psql','-U','postgres','-v','ON_ERROR_S
  const saved=JSON.parse(both[0].stdout.trim().split('\n').at(-1));
  const edit=()=>prefix+`select public.casa_save_purchase(gen_random_uuid(),'${home}','${saved.purchase.id}',${saved.purchase.revision},'Concurrent edit','2026-10-02',20,'[]');`;
  const attempts=await Promise.allSettled([query(edit()),query(edit())]);assert.equal(attempts.filter(r=>r.status==='fulfilled').length,1);assert.match(attempts.find(r=>r.status==='rejected').reason.stderr,/40001/);
- const smart=prefix+`select public.casa_save_receipt('40000000-0000-0000-0000-000000000010','${home}',null,null,'Smart concurrent','2026-10-02',5,'[{"name":"Product","quantity":1,"line_total":10}]','[{"kind":"discount","description":"Promo","amount_cents":-500,"item_index":0}]',null);`;
+ const smart=prefix+`select public.casa_save_receipt('40000000-0000-0000-0000-000000000010','${home}',null,null,'Smart concurrent','2026-10-02',4.50,'[{"name":"Product","quantity":1,"line_total":10}]','[{"kind":"discount","description":"Promo","amount_cents":-500,"item_index":0}]',null);`;
  const smartBoth=await Promise.all([query(smart),query(smart)]);assert.equal(smartBoth[0].stdout,smartBoth[1].stdout);const smartSaved=JSON.parse(smartBoth[0].stdout.trim().split('\n').at(-1));
- const smartEdit=()=>prefix+`select public.casa_save_receipt(gen_random_uuid(),'${home}','${smartSaved.purchase.id}',${smartSaved.purchase.revision},'Smart edit','2026-10-02',5,'[{"name":"Product","quantity":1,"line_total":10}]','[{"kind":"discount","description":"Promo","amount_cents":-500,"item_index":0}]',null);`;
+ const smartEdit=()=>prefix+`select public.casa_save_receipt(gen_random_uuid(),'${home}','${smartSaved.purchase.id}',${smartSaved.purchase.revision},'Smart edit','2026-10-02',4.25,'[{"name":"Product","quantity":1,"line_total":10}]','[{"kind":"discount","description":"Promo","amount_cents":-500,"item_index":0}]',null);`;
  const smartAttempts=await Promise.allSettled([query(smartEdit()),query(smartEdit())]);assert.equal(smartAttempts.filter(r=>r.status==='fulfilled').length,1);assert.match(smartAttempts.find(r=>r.status==='rejected').reason.stderr,/40001/);
  const request='30000000-0000-0000-0000-000000000006';
  await query(prefix+`select public.casa_receipt_begin('${request}','${home}','image/png',100);`);
