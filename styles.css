@@ -222,3 +222,33 @@ code { color: var(--accent); }
 #receipt-items .needs-review { border-color:#FFB84D; }
 #receipt-items .receipt-product-editor { padding:12px; border-top:1px solid var(--line); }
 #receipt-items summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--radius-sm); }
+/* CASA 3.1: only receipt upload/review changes. Footer occupies its own space. */
+#receipt-dialog { padding:0; overflow:hidden; max-height:calc(var(--receipt-viewport-height,100dvh) - 16px); }
+#receipt-dialog[open] { display:flex; top:var(--receipt-viewport-top,0px); bottom:auto; margin:8px auto; }
+#receipt-form { display:flex; flex-direction:column; width:100%; min-height:0; max-height:inherit; overflow:hidden; margin:0; }
+#receipt-dialog .receipt-scroll { min-height:0; overflow:auto; overscroll-behavior:contain; padding:18px; flex:1 1 auto; }
+#receipt-dialog .receipt-scroll > * + * { margin-top:var(--space-md); }
+#receipt-status:empty,#receipt-validation:empty,#receipt-uncertain:empty { display:none; }
+#receipt-dialog .receipt-confirmation { flex:none; padding:12px 18px max(12px,env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--surface); }
+#receipt-dialog .receipt-footer-buttons { display:flex; align-items:center; gap:8px; }
+#receipt-dialog .receipt-footer-buttons button { min-height:44px; }
+#receipt-confirm { flex:1; }
+#receipt-review-check { flex-direction:row; align-items:center; margin-bottom:10px; font-size:14px; }
+#receipt-review-check input { min-height:24px; height:24px; padding:0; accent-color:var(--accent); }
+#receipt-dialog .receipt-footer-buttons button { font-size:14px; padding:10px; }
+#receipt-dialog .receipt-overview { padding:12px; border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--surface2); }
+#receipt-dialog .receipt-overview h3 { margin:0; overflow-wrap:anywhere; }
+#receipt-dialog .receipt-overview p { margin:6px 0; }
+#receipt-dialog .receipt-overview-bottom { display:flex; gap:12px; justify-content:space-between; align-items:center; flex-wrap:wrap; }
+#receipt-summary-total { font-size:22px; }
+#receipt-dialog .receipt-balance-ok { color:#3DDC97; }
+#receipt-dialog .receipt-balance-error { color:#FF6B7A; }
+#receipt-advanced { margin-top:16px; border-top:1px solid var(--line); }
+#receipt-advanced > summary { min-height:44px; padding:12px 0; cursor:pointer; color:var(--accent); }
+#receipt-advanced summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+#receipt-advanced .receipt-advanced-content { padding:8px 0; }
+#receipt-adjustments .receipt-adjustment { padding:0; }
+#receipt-adjustments summary { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; cursor:pointer; padding:10px 12px; min-height:44px; }
+#receipt-adjustments .r-adjustment-name { overflow-wrap:anywhere; font-weight:600; }
+#receipt-adjustments .r-adjustment-effect { grid-column:1 / -1; font-size:12px; color:var(--muted); }
+#receipt-adjustments .receipt-adjustment-editor { padding:12px; border-top:1px solid var(--line); }

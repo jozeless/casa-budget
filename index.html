@@ -55,7 +55,63 @@
   <dialog id="detail-dialog" class="modal"><div class="modal-head"><h2 id="detail-title">Compra</h2><button type="button" class="icon-btn" data-close="detail-dialog" aria-label="Cerrar">✕</button></div><p id="detail-subtitle" class="muted"></p><div id="detail-items" class="detail-items"></div><div id="detail-adjustments"></div><button id="view-receipt" type="button" class="text-button">Consultar recibo original</button><div class="detail-bottom"><b id="detail-total"></b><button id="edit-purchase" class="secondary" type="button">Editar compra</button><button id="delete-purchase" class="danger">Eliminar compra</button></div></dialog>
   <dialog id="duplicate-dialog" class="modal"><h2>Posible compra duplicada</h2><p>Posible compra duplicada. Ya existe una compra con estos datos. ¿Quieres guardarla igualmente?</p><div class="dialog-actions"><button id="duplicate-cancel" type="button" class="secondary">Cancelar</button><button id="duplicate-save" type="button" class="primary">Guardar igualmente</button></div></dialog>
   <dialog id="product-dialog" class="modal"><div class="modal-head"><h2 id="product-title">Historial del producto</h2><button type="button" class="icon-btn" data-close="product-dialog" aria-label="Cerrar">✕</button></div><label>Periodo<select id="product-month"></select></label><p id="product-status" role="status" aria-live="polite"></p><button id="product-retry" class="text-button" type="button">Actualizar historial</button><div id="product-summary"></div><div id="product-history" class="stack"></div></dialog>
-  <dialog id="receipt-dialog" class="modal receipt-modal" aria-labelledby="receipt-title"><h2 id="receipt-title">Revisar recibo</h2><p class="hint">Al pulsar Analizar, el archivo se enviará a OpenAI. La compra solo se guarda cuando la confirmas.</p><label>Imagen o PDF digital de una página (máximo 10 MB)<input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf"></label><label>O fotografiar un recibo<input id="receipt-camera" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"></label><button id="receipt-process" class="secondary" type="button">Analizar / consultar estado</button><p id="receipt-status" role="status" aria-live="polite"></p><div id="receipt-pending" class="stack"></div><a id="receipt-original" class="text-button hidden" target="_blank" rel="noopener noreferrer">Ver recibo original (enlace temporal)</a><img id="receipt-preview" class="hidden" alt="Recibo original para revisar"><form id="receipt-form" class="stack"><div id="receipt-review" class="stack hidden"><p id="receipt-meta" class="hint"></p><label>Supermercado<input id="receipt-store" required maxlength="80"></label><label>Fecha<input id="receipt-date" type="date" required></label><label>Total pagado (€)<input id="receipt-total" type="number" min="0.01" step="0.01" required></label><h3>Productos</h3><div id="receipt-items" class="stack"></div><button id="receipt-add-item" class="text-button" type="button">Añadir producto</button><h3>Descuentos y ajustes</h3><div id="receipt-adjustments" class="stack"></div><button id="receipt-add-adjustment" class="text-button" type="button">Añadir ajuste</button><p id="receipt-uncertain" class="receipt-warning"></p><label class="receipt-check"><input id="receipt-reviewed" type="checkbox">He revisado los campos inciertos y las promociones; no están aplicadas dos veces.</label><p>Total calculado: <b id="receipt-calculated"></b> · Diferencia: <b id="receipt-difference"></b></p><p id="receipt-validation" role="status"></p><button id="receipt-confirm" class="primary" type="submit" disabled>Confirmar y guardar compra</button></div><button id="receipt-cancel" class="secondary" type="button">Cancelar</button></form></dialog>
+  <dialog id="receipt-dialog" class="modal receipt-modal" aria-labelledby="receipt-title">
+    <form id="receipt-form" class="receipt-layout">
+      <div class="receipt-scroll">
+        <h2 id="receipt-title">Añadir recibo</h2>
+        <section id="receipt-upload" class="stack" aria-label="Seleccionar recibo">
+          <p class="hint">El archivo se enviará a OpenAI para analizarlo. Ninguna compra se guarda sin tu confirmación.</p>
+          <button id="receipt-select" class="primary" type="button">Seleccionar y analizar recibo</button>
+          <button id="receipt-take-photo" class="text-button" type="button">Tomar una foto</button>
+          <input id="receipt-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" hidden aria-label="Seleccionar recibo">
+          <input id="receipt-camera" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" hidden aria-label="Fotografiar recibo">
+          <p class="hint">JPG, PNG, WebP o PDF compatible de una página · máximo 10 MB.</p>
+        </section>
+        <p id="receipt-status" role="status" aria-live="polite"></p>
+        <div id="receipt-upload-recovery"><button id="receipt-process" class="secondary hidden" type="button">Consultar estado / reintentar</button></div>
+        <div id="receipt-pending" class="stack"></div>
+        <section id="receipt-review" class="hidden" aria-label="Revisión de compra">
+          <header class="receipt-overview">
+            <h3 id="receipt-summary-store"></h3>
+            <p id="receipt-summary-date"></p>
+            <div class="receipt-overview-bottom"><span id="receipt-summary-count"></span><strong id="receipt-summary-total"></strong></div>
+            <p id="receipt-summary-discount" class="hint hidden"></p>
+          </header>
+          <p id="receipt-advanced-alert" class="receipt-warning hidden" role="status"></p>
+          <button id="receipt-advanced-link" type="button" class="text-button hidden">Revisar campos en Opciones avanzadas</button>
+          <h3>Productos</h3>
+          <div id="receipt-items" class="stack"></div>
+          <button id="receipt-add-item" class="text-button" type="button">Añadir producto</button>
+          <p id="receipt-uncertain" class="receipt-warning"></p>
+          <p id="receipt-amount-status" class="hint" role="status"></p>
+          <p id="receipt-validation" class="receipt-warning" role="status"></p>
+          <details id="receipt-advanced">
+            <summary>Opciones avanzadas</summary>
+            <div class="stack receipt-advanced-content">
+              <label>Supermercado<input id="receipt-store" required maxlength="80"></label>
+              <label>Fecha<input id="receipt-date" type="date" required></label>
+              <label>Total pagado (€)<input id="receipt-total" type="number" min="0.01" step="0.01" required></label>
+              <h3>Descuentos, depósitos y ajustes</h3>
+              <div id="receipt-adjustments" class="stack"></div>
+              <button id="receipt-add-adjustment" class="text-button" type="button">Añadir ajuste</button>
+              <a id="receipt-original" class="text-button hidden" target="_blank" rel="noopener noreferrer">Ver recibo original (enlace temporal)</a>
+              <img id="receipt-preview" class="hidden" alt="Recibo original para revisar">
+              <p id="receipt-meta" class="hint"></p>
+              <p class="hint">Total calculado: <b id="receipt-calculated"></b> · Diferencia: <b id="receipt-difference"></b></p>
+              <div id="receipt-advanced-tools"></div>
+            </div>
+          </details>
+        </section>
+      </div>
+      <footer class="receipt-confirmation">
+        <label id="receipt-review-check" class="receipt-check hidden"><input id="receipt-reviewed" type="checkbox" required>He revisado los productos y los importes</label>
+        <div class="receipt-footer-buttons">
+          <button id="receipt-confirm" class="primary hidden" type="submit" disabled>Confirmar y guardar compra</button>
+          <button id="receipt-cancel" class="text-button" type="button">Cancelar</button>
+        </div>
+      </footer>
+    </form>
+  </dialog>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
