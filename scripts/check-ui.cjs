@@ -16,6 +16,8 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
 (async()=>{
  const server=http.createServer((request,response)=>{
    const name=new URL(request.url,'http://localhost').pathname.replace(/^\/casa-budget\//,'/').slice(1)||'index.html';
+   // Model Pages/Jekyll's underscore exclusion so removing .nojekyll fails the suite.
+   if(!fs.existsSync(path.join(root,'.nojekyll'))&&name.split('/').some(part=>part.startsWith('_'))){response.writeHead(404);response.end();return;}
    if(!['index.html','styles.css','budget.js','app.js','config.js','sw.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','receipt.js','supabase/functions/_shared/receipt-core.js'].includes(name)){response.writeHead(404);response.end();return;}
    response.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.html')?'text/html':name.endsWith('.css')?'text/css':name.endsWith('.svg')?'image/svg+xml':name.endsWith('.png')?'image/png':'application/json');response.end(fs.readFileSync(path.join(root,name)));
  });
@@ -94,7 +96,7 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
  await page.locator('[data-page=settings]').click();await page.locator('#new-budget-btn').click();await page.locator('#budget-input').fill('150');await page.locator('#budget-form button[type=submit]').click();await page.locator('#budget-dialog').waitFor({state:'hidden'});assert.match(await page.locator('#remaining').textContent(),/130/);assert(Math.abs(parseFloat(await page.locator('#progress-bar').evaluate(el=>el.style.width))-130/150*100)<0.001);
  // Installed shell includes the new helper and survives a network failure.
  await page.evaluate(()=>navigator.serviceWorker.ready);await page.reload();await page.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');
- assert(await page.evaluate(async()=>{const cache=await caches.open('casa-shell-v8-smart30');return !!(await cache.match('./budget.js'));}));
+ assert(await page.evaluate(async()=>{const cache=await caches.open('casa-shell-v9-receipt-loader');return !!(await cache.match('./budget.js'));}));
  await ui.context.setOffline(true);assert.match(await page.evaluate(async()=>await (await fetch('./budget.js')).text()),/Pure calendar/);await ui.context.setOffline(false);
  await page.locator('[data-page=settings]').click();await page.locator('#logout-btn').click();await page.locator('#auth-view').waitFor({state:'visible'});assert(!await page.locator('#app-nav').isVisible());assert(!await page.locator('#add-menu-btn').isVisible());
  await page.locator('#auth-config-btn').click();assert(await page.locator('#setup-view').isVisible());await page.locator('#config-cancel-btn').click();await page.locator('#auth-view').waitFor({state:'visible'});
@@ -205,6 +207,18 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
  }
  const emptyData=await open(320,568,{budget:0,purchases:[],items:[]});await emptyData.page.locator('[data-page=data]').click();assert.equal(await emptyData.page.locator('#data-average').textContent(),'Sin compras');assert.equal(await emptyData.page.locator('#data-used').textContent(),'No aplicable');assert(await emptyData.page.locator('#data-empty').isVisible());await emptyData.context.close();
  }
+ // Missing core must leave manual purchases/navigation usable and prevent receipt API calls.
+ const missingContext=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'}),errors=[];
+ await missingContext.addInitScript(installMock,{purchases:[],items:[]});
+ await missingContext.route('https://cdn.jsdelivr.net/**',r=>r.fulfill({contentType:'text/javascript',body:'/* mock Auth */'}));
+ await missingContext.route('https://*.supabase.co/**',r=>r.abort());
+ await missingContext.route('**/supabase/functions/_shared/receipt-core.js',r=>r.fulfill({status:404,body:'Not found'}));
+ const missing=await missingContext.newPage();missing.on('pageerror',e=>errors.push(e.message));await missing.goto(address);
+ await missing.waitForFunction(()=>document.getElementById('data-status').textContent==='Compras actualizadas');
+ for(const tab of ['history','data','settings','home'])await missing.locator('[data-page='+tab+']').click();
+ await missing.locator('#add-menu-btn').click();await missing.locator('#new-receipt-btn').click();assert.match(await missing.locator('#receipt-status').textContent(),/No se pudo cargar.*Actualiza CASA/);assert(await missing.locator('#receipt-process').isDisabled());assert(await missing.locator('#receipt-confirm').isDisabled());assert.deepEqual(errors,[]);assert.equal(await missing.evaluate(()=>mock.calls.filter(c=>c.operation==='upload'||c.operation==='extract-receipt').length),0);
+ await missing.locator('#receipt-cancel').click();await missing.locator('#add-menu-btn').click();await missing.locator('#new-purchase-btn').click();await missing.locator('#purchase-store').fill('Manual');await missing.locator('#purchase-date').fill(month+'-01');await missing.locator('#purchase-total').fill('10');await missing.locator('#save-purchase').click();await missing.locator('#purchase-dialog').waitFor({state:'hidden'});assert.equal(await missing.evaluate(()=>mock.data.purchases.length),1);assert.deepEqual(errors,[]);await missingContext.close();
+ console.log('Missing receipt core: readable error, blocked uploads, navigation and manual purchase passed.');
  // CASA 3.0: all extraction/storage calls remain mocked; no real credentials or APIs.
  const jumbo=require('../tests/fixtures/jumbo-receipt.json');
  for(const [width,height] of [[320,568],[390,844],[568,320],[1280,900]]){
@@ -246,7 +260,7 @@ const many={budget:100,purchases:Array.from({length:450},(_,index)=>purchase('p'
  // Manifest/resources resolve correctly under the deployed subdirectory.
  const profile=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'casa-install-'));
  const install=await chromium.launchPersistentContext(profile,{executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});
- try{await install.addInitScript(installMock,{purchases:[],items:[]});await install.route('https://cdn.jsdelivr.net/**',r=>r.fulfill({contentType:'text/javascript',body:'/* mock auth */'}));await install.route('https://*.supabase.co/**',r=>r.abort());const page=await install.newPage();await page.goto(address+'casa-budget/');await page.waitForFunction(()=>navigator.serviceWorker.controller);const cdp=await install.newCDPSession(page);const manifest=await cdp.send('Page.getAppManifest');assert.equal(manifest.errors.length,0);assert(manifest.url.endsWith('/casa-budget/manifest.webmanifest'));const installability=await cdp.send('Page.getInstallabilityErrors');assert.deepEqual(installability.installabilityErrors,[]);}finally{await install.close();fs.rmSync(profile,{recursive:true,force:true});}
+ try{await install.addInitScript(installMock,{purchases:[],items:[]});await install.route('https://cdn.jsdelivr.net/**',r=>r.fulfill({contentType:'text/javascript',body:'/* mock auth */'}));await install.route('https://*.supabase.co/**',r=>r.abort());const page=await install.newPage();await page.goto(address+'casa-budget/');await page.waitForFunction(()=>navigator.serviceWorker.controller);const cacheCheck=await page.evaluate(async()=>{const cache=await caches.open('casa-shell-v9-receipt-loader');const requests=await cache.keys();return {count:requests.length,core:await (await cache.match(new URL('supabase/functions/_shared/receipt-core.js',location.href).href)).text()};});assert.equal(cacheCheck.count,12);assert(cacheCheck.core.includes('CASA_RECEIPTS'));assert.equal(await page.evaluate(()=>typeof window.CASA_RECEIPTS.inspectFile),'function');const cdp=await install.newCDPSession(page);const manifest=await cdp.send('Page.getAppManifest');assert.equal(manifest.errors.length,0);assert(manifest.url.endsWith('/casa-budget/manifest.webmanifest'));const installability=await cdp.send('Page.getInstallabilityErrors');assert.deepEqual(installability.installabilityErrors,[]);}finally{await install.close();fs.rmSync(profile,{recursive:true,force:true});}
  console.log('CASA 3.0 receipt review, explicit confirmation, Jumbo reconciliation, cached extraction, lost-response retry, editing, image-only cleanup and Chromium installability passed at four viewports.');
  if(!process.env.RECEIPTS_ONLY)console.log(cases+' responsive scenarios passed; filters, real-value reports, safe navigation, shared reads, simulated insert/delete/budget/login/logout, PWA cache, calendar rollover, shared budgets and post-write read failures passed. Phase 2 editing, add/remove items, conflicts, duplicates, retries and paginated product histories passed on mobile/desktop. CASA 2.5 Settings, compact header, four views and remaining-budget boundaries passed. Data 2.6 metrics, store/product identities, shared period, charts, keyboard tabs, stale reads and session reset passed. No live Supabase calls.');else console.log('Existing UI regression scenarios skipped in RECEIPTS_ONLY mode.');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

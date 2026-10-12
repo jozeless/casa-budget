@@ -1,6 +1,15 @@
 /* Private receipts UI. No API secrets; authenticated Supabase operations only. */
 window.CASA_RECEIPT_UI=function({getStore,notice,duplicateApproval,applySaved,reloadAfterWrite,refresh}){
  const $=id=>document.getElementById(id),core=window.CASA_RECEIPTS,fmt=n=>new Intl.NumberFormat('es-NL',{style:'currency',currency:'EUR'}).format(n);
+ // Scripts are ordered in index.html; fail safely if a hosting/cache error prevented loading.
+ if(!core||typeof core.inspectFile!=='function'){
+  const message='No se pudo cargar la lectura de recibos. Actualiza CASA con conexión a Internet y vuelve a intentarlo.';
+  const unavailable=()=>{$('add-menu-dialog').close();$('receipt-status').textContent=message;$('receipt-dialog').showModal();};
+  for(const id of ['receipt-process','receipt-confirm','receipt-file','receipt-camera'])$(id).disabled=true;
+  $('receipt-storage-refresh').onclick=()=>{$('receipt-storage-status').textContent=message;};$('receipt-storage-delete').disabled=true;
+  $('new-receipt-btn').onclick=unavailable;$('receipt-cancel').onclick=()=>$('receipt-dialog').close();
+  return {reset(){ $('receipt-dialog').close();$('receipt-status').textContent=''; },async edit(purchase){if(getStore().adjustments.some(a=>a.purchase_id===purchase.id)){unavailable();return true;}return false;},async showOriginal(){unavailable();}};
+ }
  const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  let draft=null,receipt=null,editing=null,busy=false,epoch=0,originalUrl=null;
  const key=()=>`casa_pending_receipt_${getStore().user?.id}_${getStore().household?.id}`;
