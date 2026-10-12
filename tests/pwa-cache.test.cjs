@@ -33,6 +33,6 @@ test('old network scripts cannot replace installed shell; recovery query uses ca
  sw.reply=()=>{throw Error('offline');};assert.equal(await (await sw.request('supabase/functions/_shared/receipt-core.js?casa-module=v10&attempt=1')).text(),'installed');
 });
 test('failed core download leaves the old cache active, removes partial update and never skips waiting',async()=>{
- const sw=worker({failAsset:'receipt-core.js'});await sw.caches.open('casa-shell-v9-receipt-loader');await sw.caches.open('other-app');
- await assert.rejects(sw.install(),/HTTP404/);assert(!sw.skipped);assert(!sw.claimed);assert(sw.stores.has('casa-shell-v9-receipt-loader'));assert(sw.stores.has('other-app'));assert(!sw.stores.has('casa-shell-v11-receipt-ux'));
+ const sw=worker({failAsset:'receipt-core.js'});await sw.caches.open('casa-shell-v11-receipt-ux');await sw.caches.open('other-app');
+ await assert.rejects(sw.install(),/HTTP404/);assert(!sw.skipped);assert(!sw.claimed);assert(sw.stores.has('casa-shell-v11-receipt-ux'));assert(sw.stores.has('other-app'));assert(!sw.stores.has('casa-shell-v12-paid-total'));
 });

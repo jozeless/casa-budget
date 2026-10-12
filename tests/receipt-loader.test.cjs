@@ -10,7 +10,7 @@ test('every install-cache asset exists and is publishable under the Pages subdir
  const sw=fs.readFileSync(path.join(root,'sw.js'),'utf8'),match=sw.match(/const SHELL = (\[[^;]+\])/);assert(match);
  const paths=vm.runInNewContext(match[1]);assert.equal(paths.length,12);assert(paths.includes('./supabase/functions/_shared/receipt-core.js'));
  for(const file of paths){const target=file==='./'?'index.html':file.slice(2);assert(fs.statSync(path.join(root,target)).isFile(),target);assert(new URL(file,'https://jozeless.github.io/casa-budget/').pathname.startsWith('/casa-budget/'));}
- assert(sw.includes("'casa-shell-v11-receipt-ux'"));
+ assert(sw.includes("'casa-shell-v12-paid-total'"));
 });
 for(const core of [undefined,{}, {apiVersion:1,inspectFile(){throw Error('old core invoked');}}])test('missing/incomplete core gives a readable error and never enables inspection',async()=>{
  const nodes=new Map(),get=id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,textContent:'',classList:{remove(){}},close(){this.open=false;},showModal(){this.open=true;}});return nodes.get(id);};

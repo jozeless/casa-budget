@@ -71,7 +71,8 @@ module.exports=function installMock(seed){
   if(previous)return previous.signature===signature?{data:JSON.parse(JSON.stringify(previous.result)),error:null}:{data:null,error:{code:'P0001',message:'Different operation payload'}};
   const existing=data.purchases.find(p=>p.id===args.p_purchase_id);
   if(args.p_purchase_id&&(!existing||existing.revision!==args.p_expected_revision))return {data:null,error:{code:'40001',message:'La compra cambió. Vuelve a abrirla antes de editar.'}};
-  if(args.p_items.length&&Math.round(args.p_items.reduce((sum,i)=>sum+i.line_total,0)*100)+(args.p_adjustments||[]).reduce((n,a)=>n+a.amount_cents,0)!==Math.round(args.p_total*100))return {data:null,error:{code:'P0001',message:'Invalid item total'}};
+  if(name==='casa_save_receipt'&&seed.oldReceiptContract&&args.p_items.length&&Math.round(args.p_items.reduce((n,i)=>n+i.line_total,0)*100)!==Math.round(args.p_total*100))return {data:null,error:{code:'P0001',message:'Productos y ajustes no coinciden con el total'}};
+  if(name==='casa_save_purchase'&&args.p_items.length&&Math.round(args.p_items.reduce((sum,i)=>sum+i.line_total,0)*100)+(args.p_adjustments||[]).reduce((n,a)=>n+a.amount_cents,0)!==Math.round(args.p_total*100))return {data:null,error:{code:'P0001',message:'Invalid item total'}};
   const purchase={...(existing||{id:'mock-'+(++nextId),household_id:args.p_household_id,created_by:'test-user',created_at:new Date().toISOString()}),store:args.p_store,purchased_on:args.p_date,total:args.p_total,revision:(existing?.revision||0)+1};
   const items=args.p_items.map(item=>({...item,id:'mock-item-'+(++nextId),purchase_id:purchase.id}));
   data.purchases=data.purchases.filter(p=>p.id!==purchase.id).concat(purchase);data.items=data.items.filter(i=>i.purchase_id!==purchase.id).concat(items);

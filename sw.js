@@ -1,4 +1,4 @@
-const CACHE = 'casa-shell-v11-receipt-ux';
+const CACHE = 'casa-shell-v12-paid-total';
 const SHELL = ['./','./index.html','./styles.css','./app.js','./budget.js','./config.js','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png','./receipt.js','./supabase/functions/_shared/receipt-core.js'];
 const shellUrls = new Set(SHELL.map(path=>new URL(path,self.registration.scope).href));
 self.addEventListener('install', event => {

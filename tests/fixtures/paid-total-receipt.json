@@ -1,0 +1,20 @@
+{
+  "store": "Jumbo Breda Dr. Struyckenplein",
+  "establishment": "Breda Dr. Struyckenplein",
+  "date": "2026-10-08",
+  "time": "18:25",
+  "items": [
+    {
+      "name": "Recorded product",
+      "quantity": 1,
+      "unit": null,
+      "unit_price": null,
+      "line_total": 31.57,
+      "source": "fixture line 1"
+    }
+  ],
+  "adjustments": [],
+  "total": 28.98,
+  "uncertain": [],
+  "warnings": []
+}

@@ -94,7 +94,7 @@ Chromium de escritorio/CDP y validación de manifiesto ayudan, pero no sustituye
 - Total de compra > 0. Devoluciones completas/recibos negativos no se pueden guardar.
 - Imágenes: máximo 12 MP, 30.000 píxeles por lado y 10 MB. Se reoptimiza PNG solo si ahorra al menos 20% manteniendo la resolución y los píxeles mostrados; no se redimensiona ni recomprime JPEG ni se rasteriza PDF. Rechazar excesos con mensaje en vez de comprimir sin control.
 - PDF: una página sin cifrado, JavaScript, acciones/adjuntos activos; no se rasteriza innecesariamente. HEIC no admitido.
-- La IA puede equivocarse aunque su JSON sea correcto. Confirmación humana y conciliación obligatorias.
+- La IA puede equivocarse aunque su JSON sea correcto. Confirmación humana del total pagado obligatoria. Desde CASA 3.2, la suma de líneas es informativa; aplicar también la migración descrita en [CASA 3.2](CASA-3.2-PAID-TOTAL.md).
 - Descuentos generales NO se reparten: Data conserva importes brutos de productos y muestra ajustes atribuibles aparte; totales/tiendas usan lo pagado.
 - Borrar imágenes conserva metadatos de extracción; no es una solicitud de borrado total de datos personales.
 
@@ -114,7 +114,7 @@ Los resultados antiguos de extracción siguen siendo legibles. Si no registraron
 
 ### Caché y primera carga
 
-Se conserva `.nojekyll` y el orden síncrono core → receipt.js → app.js. La caché v10 instala los 12 archivos completos antes de activarse; una descarga fallida conserva la versión anterior y elimina la actualización parcial. El shell instalado se sirve como conjunto coherente; config.js mantiene lectura de red sin caché HTTP. No se recargan automáticamente revisiones sin guardar.
+Se conserva `.nojekyll` y el orden síncrono core → receipt.js → app.js. La caché v12 instala los 12 archivos completos antes de activarse; una descarga fallida conserva la versión anterior y elimina la actualización parcial. El shell instalado se sirve como conjunto coherente; config.js mantiene lectura de red sin caché HTTP. No se recargan automáticamente revisiones sin guardar.
 
 Si el módulo falta o es de una versión incompatible, no se ejecuta inspectFile: la pantalla ofrece **Volver a cargar módulo**. Esta acción solicita únicamente el script público de CASA con una URL de recuperación; no envía imágenes, no crea compras y no llama a OpenAI. Un error de descarga, timeout o versión incompatible produce un mensaje específico y permite reintentar. Una PWA que todavía ejecute una página anterior a esta corrección debe cerrarse y reabrirse/recargarse; código ya ejecutado de una versión antigua no se reemplaza por sí solo.
 
@@ -122,4 +122,4 @@ Si el módulo falta o es de una versión incompatible, no se ejecuta inspectFile
 
 La mejora del prompt requiere desplegar MANUALMENTE la Edge Function desde el commit aprobado de esta corrección, después de actualizar/verificar el frontend. El workflow actual está fijado al commit 284d5d7: ejecutarlo sin actualizar su SHA NO desplegaría el prompt nuevo. Revisar ese pin en un cambio de infraestructura autorizado, o seguir el despliegue CLI manual desde el checkout aprobado. No desplegar ni ejecutar SQL durante las pruebas de esta rama.
 
-No se ha probado OCR real contra OpenAI ni Android físico en esta corrección. Los fixtures reproducen cifras/contexto con nombres sintéticos. Verificar el recibo original de Jumbo y fotografías/recibos ambiguos tras una activación autorizada. Se conservan los límites de cantidades de dos decimales y de total positivo. La interpretación del modelo puede fallar; lectura del original, revisión humana y conciliación siguen siendo obligatorias.
+No se ha probado OCR real contra OpenAI ni Android físico en esta corrección. Los fixtures reproducen cifras/contexto con nombres sintéticos. Verificar el recibo original de Jumbo y fotografías/recibos ambiguos tras una activación autorizada. Se conservan los límites de cantidades de dos decimales y de total positivo. La interpretación del modelo puede fallar; lectura del original y revisión humana del total y campos inciertos siguen siendo obligatorias. La diferencia de sumas ya no bloquea en CASA 3.2.
