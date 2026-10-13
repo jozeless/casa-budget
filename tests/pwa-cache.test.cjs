@@ -34,5 +34,5 @@ test('old network scripts cannot replace installed shell; recovery query uses ca
 });
 test('failed core download leaves the old cache active, removes partial update and never skips waiting',async()=>{
  const sw=worker({failAsset:'receipt-core.js'});await sw.caches.open('casa-shell-v11-receipt-ux');await sw.caches.open('other-app');
- await assert.rejects(sw.install(),/HTTP404/);assert(!sw.skipped);assert(!sw.claimed);assert(sw.stores.has('casa-shell-v11-receipt-ux'));assert(sw.stores.has('other-app'));assert(!sw.stores.has('casa-shell-v13-supermarket-names'));
+ await assert.rejects(sw.install(),/HTTP404/);assert(!sw.skipped);assert(!sw.claimed);assert(sw.stores.has('casa-shell-v11-receipt-ux'));assert(sw.stores.has('other-app'));assert(!sw.stores.has('casa-shell-v14-inicio-002'));
 });

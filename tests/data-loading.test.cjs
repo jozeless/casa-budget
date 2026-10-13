@@ -7,7 +7,7 @@ function mount(seed,initialDate){
  class ClockDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}static now(){return clock;}}
  let modelCalls=0;
  const events={},timers=[],storage=new Map(),rows=[];
- const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',innerHTML:'',hidden:true,dataset:{},style:{},classList:{toggle(_name,value){node(id).hidden=value;},add(){},remove(){}},attributes:{},setAttribute(name,value){this.attributes[name]=value;},reset(){},close(){this.open=false;},showModal(){this.open=true;}});return nodes.get(id);};
+ const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',textContent:'',innerHTML:'',hidden:true,dataset:{},style:{setProperty(name,value){this[name]=value;}},classList:{toggle(_name,value){node(id).hidden=value;},add(){},remove(){}},attributes:{},setAttribute(name,value){this.attributes[name]=value;},reset(){},close(){this.open=false;},showModal(){this.open=true;}});return nodes.get(id);};
  const buttons=['home','history','data','settings'].map(name=>({dataset:{page:name},setAttribute(){},removeAttribute(){}}));
  const dataButtons=['summary','stores','products'].map(name=>({dataset:{dataTab:name},attributes:{},setAttribute(key,value){this.attributes[key]=value;},focus(){}}));
  const context={Date:ClockDate,confirm(){return true;},Intl,URLSearchParams,Number,String,Map,Set,Math,Promise,JSON,setTimeout,clearTimeout,queueMicrotask,navigator:{},history:{replaceState(){}},location:{hash:'',search:''},document:{addEventListener(name,fn){events[name]=fn;},getElementById:node,querySelectorAll(selector){return selector==='[data-page]'?buttons:selector==='[data-data-tab]'?dataButtons:selector==='#items-container .item-row'?rows:[];}},localStorage:{getItem(key){return storage.get(key)||null;},setItem(key,value){storage.set(key,value);},removeItem(key){storage.delete(key);}},window:{crypto:require('node:crypto').webcrypto,setTimeout(fn,delay){timers.push({fn,delay});return timers.length;},clearTimeout(){},addEventListener(name,fn){events[name]=fn;},CASA_BUDGET:{...budget,dataIntelligence(...args){modelCalls++;return budget.dataIntelligence(...args);}},CASA_CONFIG:{supabaseUrl:'https://test.supabase.co',supabaseAnonKey:'sb_publishable_test'}}};
@@ -41,7 +41,7 @@ for(const [name,from,to] of [
  const calls=ui.mock.calls.length;ui.setDate(to);ui.timers.at(-1).fn();
  const expected=budget.weekly(200,rows,new Date(to));
  assert.match(ui.node('weekly-amount').textContent,new RegExp(String(expected.amount/100).replace('.',',')));
- assert.match(ui.node('weekly-period').textContent,new RegExp(expected.daysThisWeek+' días'));
+ assert.match(ui.node('weekly-period').textContent,new RegExp(expected.daysThisWeek+(expected.daysThisWeek===1?' día':' días')));
  assert.match(ui.node('remaining').textContent,name==='month end'?/180/:/100/);
  assert.match(ui.node('period-heading').textContent,name==='month end'?/noviembre/:/octubre/);
  assert.equal(ui.mock.calls.length,calls);

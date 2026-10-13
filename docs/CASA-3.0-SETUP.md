@@ -114,7 +114,7 @@ Los resultados antiguos de extracción siguen siendo legibles. Si no registraron
 
 ### Caché y primera carga
 
-Se conserva `.nojekyll` y el orden síncrono core → receipt.js → app.js. La caché v13 instala los 12 archivos completos antes de activarse; una descarga fallida conserva la versión anterior y elimina la actualización parcial. El shell instalado se sirve como conjunto coherente; config.js mantiene lectura de red sin caché HTTP. No se recargan automáticamente revisiones sin guardar.
+Se conserva `.nojekyll` y el orden síncrono core → receipt.js → app.js. La caché v14 instala los 12 archivos completos antes de activarse; una descarga fallida conserva la versión anterior y elimina la actualización parcial. El shell instalado se sirve como conjunto coherente; config.js mantiene lectura de red sin caché HTTP. No se recargan automáticamente revisiones sin guardar.
 
 Si el módulo falta o es de una versión incompatible, no se ejecuta inspectFile: la pantalla ofrece **Volver a cargar módulo**. Esta acción solicita únicamente el script público de CASA con una URL de recuperación; no envía imágenes, no crea compras y no llama a OpenAI. Un error de descarga, timeout o versión incompatible produce un mensaje específico y permite reintentar. Una PWA que todavía ejecute una página anterior a esta corrección debe cerrarse y reabrirse/recargarse; código ya ejecutado de una versión antigua no se reemplaza por sí solo.
 

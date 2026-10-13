@@ -46,7 +46,7 @@ function scheduleCalendar(){
 function resumeCalendar(){checkCalendar();scheduleCalendar();}
 function resetDashboard(){
   receiptUI?.reset();store.adjustments=[];store.receipts=[];if(receiptUI){$('data-adjustments-note').textContent='';$('detail-adjustments').innerHTML='';$('view-receipt').classList.add('hidden');}
-  for(const id of ['remaining','spent','budget','settings-budget','weekly-amount'])$(id).textContent='—';
+  for(const id of ['remaining','spent','budget','settings-budget','weekly-amount','budget-available-amount','budget-limit'])$(id).textContent='—';
   for(const id of ['purchases-list','store-report','product-report','monthly-report'])$(id).innerHTML='';
   $('purchase-count').textContent='';$('weekly-period').textContent='';$('progress-bar').style.width='0%';
   $('budget-warning').classList.add('hidden');$('budget-zero').classList.add('hidden');
@@ -341,6 +341,8 @@ function render(){
   const spent=analytics.total(purchases),budget=analytics.cents(store.household.monthly_budget),remaining=budget-spent;
   $('period-heading').textContent=monthLabel(current);
   $('remaining').textContent=fmt(remaining/100);$('spent').textContent=fmt(spent/100);$('budget').textContent=fmt(budget/100);
+  $('budget-available-amount').textContent=fmt(remaining/100);$('budget-limit').textContent=fmt(budget/100);
+  for(const id of ['remaining','spent'])$(id).style.setProperty('--amount-length',String(Math.max(8,$(id).textContent.length)));
   const availability=analytics.remainingBudget(budget/100,spent/100);
   $('settings-budget').textContent=fmt(budget/100);
   $('progress-bar').style.width=`${availability.percentage}%`;
@@ -352,7 +354,7 @@ function render(){
   const weekly=analytics.weekly(store.household.monthly_budget,store.purchases,today);
   $('weekly-amount').textContent=fmt(weekly.amount/100);
   const dateFormat={day:'numeric',month:'short'};
-  $('weekly-period').textContent=`${weekly.from.toLocaleDateString('es-ES',dateFormat)} – ${weekly.to.toLocaleDateString('es-ES',dateFormat)} · ${weekly.daysThisWeek} días de este mes`;
+  $('weekly-period').textContent=`${weekly.from.toLocaleDateString('es-ES',dateFormat)} – ${weekly.to.toLocaleDateString('es-ES',dateFormat)} · ${weekly.daysThisWeek} ${weekly.daysThisWeek===1?'día':'días'} hasta ${weekly.to.getDay()===0?'el domingo':'fin de mes'}`;
   renderHistory();
   if(store.loaded){const model=dataModel();renderDataStores(model);renderDataProducts(model);}
   renderData();navigate(store.page,false);

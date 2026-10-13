@@ -19,7 +19,7 @@ function mount({hash = recoveryHash, initialize, getSession, updateUser} = {}) {
   const elements = new Map();
   const element = id => {
     if (!elements.has(id)) elements.set(id, {
-      textContent: '', value: '', disabled: false, hidden: true, style: {}, dataset: {},
+      textContent: '', value: '', disabled: false, hidden: true, style: {setProperty(name,value){this[name]=value;}}, dataset: {},
       classList: {toggle(_name, hidden) {element(id).hidden = hidden;}, add() {}, remove() {}},
       setAttribute() {}, reset() {}, focus() {}, reportValidity() {return true;}
     });
