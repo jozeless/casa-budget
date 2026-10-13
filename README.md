@@ -67,7 +67,7 @@ También puedes dejar `config.js` sin rellenar: al abrir la app te pedirá ambos
 - La suma del gasto por producto solo incluye compras con líneas detalladas. La identidad del producto solo normaliza espacios y mayúsculas; no combina marcas, tamaños ni acentos diferentes.
 - El presupuesto es el mismo para todos los meses, incluidos los pasados.
 - Crear/editar compras y productos se hace en una transacción con idempotencia y control de revisión. La Fase 2 utiliza una RPC transaccional; véase `migrations/README.md`.
-- El icono es SVG: instalación y visualización pueden variar según navegador. Las estadísticas no se actualizan en vivo sin recargar; ambos usuarios ven el estado actual al abrir o cambiar de mes.
+- El icono compartido es una casa de contorno morado: SVG en la cabecera y PNG 192/512 para la instalación PWA. Instalación y visualización pueden variar según navegador. Las estadísticas no se actualizan en vivo sin recargar; ambos usuarios ven el estado actual al abrir o cambiar de mes.
 - Por seguridad, el código de invitación debe compartirse solo con la pareja; cualquier usuario autenticado que posea ese código puede unirse.
 - El presupuesto y las compras se sincronizan en Supabase; la app web requiere conexión a internet para cargar los datos.
 
@@ -113,7 +113,7 @@ JPEG/PNG/WebP o PDF seguro de una página → Storage privado → Edge Function 
 
 Pruebas: `node --test`, `node scripts/check-ui.cjs`, `node scripts/check-sql.cjs`. Node requiere `pdf-lib` para pruebas PDF; Playwright/Chromium para interfaz; Docker/PostgreSQL 17 para SQL aislado. Las pruebas usan mocks, claves sintéticas y bases desechables. No consumen OpenAI ni consultan Supabase real. Los nombres del fixture Jumbo son sintéticos; sus importes reproducen el caso solicitado. Validar el recibo original y Android real antes de activar.
 
-`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y caché v13 incluyen ambos PNG y los módulos de recibos; el shell se actualiza como conjunto completo.
+`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y caché v14 incluyen ambos PNG y los módulos de recibos; el shell se actualiza como conjunto completo.
 
 La revisión de recibos usa productos compactos desplegables. La extracción distingue unidades explícitas/propuestas/inciertas y ajustes contables de información ya incluida o posterior al total. El resultado antiguo sigue siendo legible; no hay migración SQL nueva. El botón **Volver a cargar módulo** recupera una carga fallida sin enviar imágenes. Consultar en la [guía de activación](docs/CASA-3.0-SETUP.md) el nuevo esquema de extracción, los límites pendientes y el pin del workflow de despliegue.
 
@@ -125,7 +125,7 @@ La revisión de recibos usa productos compactos desplegables. La extracción dis
 - **Confirmación:** casilla «He revisado los productos y el total pagado», guardado y cancelación en un pie separado del área desplazable. Se reserva espacio para ese pie y el área segura; la altura se adapta al viewport visual. La casilla no sustituye la validación: los datos inválidos mantienen el guardado bloqueado. Desde CASA 3.2, una diferencia de sumas es solo informativa.
 - **Recuperación:** «Consultar estado / reintentar» conserva el flujo existente. Recuperar un resultado almacenado no vuelve a extraerlo. Los guardados pendientes conservan el identificador de operación y no crean otra compra al reintentar. Tras abrir de nuevo se limpia la selección de archivo para poder elegir el mismo recibo sin depender de un cambio de nombre.
 
-Caché del shell: `casa-shell-v13-supermarket-names`, instalada como conjunto completo. El identificador de recuperación del módulo compartido sigue siendo `v10`, ya que su API no ha cambiado. El despliegue de la Edge Function, el modelo/prompt y la autenticación permanecen sin cambios. El contrato SQL de CASA 3.2 se describe a continuación.
+Caché del shell: `casa-shell-v14-inicio-002`, instalada como conjunto completo. El identificador de recuperación del módulo compartido sigue siendo `v10`, ya que su API no ha cambiado. El despliegue de la Edge Function, el modelo/prompt y la autenticación permanecen sin cambios. El contrato SQL de CASA 3.2 se describe a continuación.
 
 Pruebas de CASA 3.1: `npm test`, `npm run test:ui` y `npm run test:sql`. La interfaz comprueba PNG/JPG/WebP, PDF compatible y selección de cámara con archivos locales; el servidor, Storage y OpenAI se simulan. Incluye el fixture Jumbo (81,83 − 34,95 = 46,88 €, con 0,45 € informativos), recuperación sin extracción adicional, avisos avanzados, edición, idempotencia, errores, teclado, cuatro tamaños de escritorio/móvil y viewport reducido. SQL se prueba únicamente en PostgreSQL 17 desechable con identidades de prueba. No equivalen a una prueba en producción.
 
@@ -142,7 +142,7 @@ Productos e historial muestran importes registrados de las líneas, que pueden p
 
 **Migración manual necesaria:** [`migrations/20261012_paid_total.sql`](migrations/20261012_paid_total.sql). Consultar [aplicación segura y comprobaciones](docs/CASA-3.2-PAID-TOTAL.md). Reemplaza las dos RPC de guardado con las mismas firmas y permisos, conserva el contrato de igualdad de compras manuales y no cambia tablas, RLS ni datos históricos. No volver a ejecutar la migración antigua de CASA 3.0 después de esta: reemplazaría las funciones nuevas. Si el servidor todavía rechaza la igualdad, la interfaz indica que falta aplicar CASA 3.2 y conserva el recibo pendiente.
 
-Pruebas: `npm test`, `npm run test:ui`, `npm run test:sql`. Incluyen el nuevo ejemplo, Jumbo, confirmación al cambiar el total, reintentos, pantallas compartidas y PostgreSQL 17 aislado con migración repetida, datos históricos y permisos intactos. No llaman a Supabase/OpenAI reales. La caché es `casa-shell-v13-supermarket-names`; una PWA abierta debe recargarse para recibir la interfaz instalada nueva sin perder revisiones pendientes.
+Pruebas: `npm test`, `npm run test:ui`, `npm run test:sql`. Incluyen el nuevo ejemplo, Jumbo, confirmación al cambiar el total, reintentos, pantallas compartidas y PostgreSQL 17 aislado con migración repetida, datos históricos y permisos intactos. No llaman a Supabase/OpenAI reales. La caché es `casa-shell-v14-inicio-002`; una PWA abierta debe recargarse para recibir la interfaz instalada nueva sin perder revisiones pendientes.
 
 ## Nombres uniformes de supermercados
 
@@ -150,4 +150,17 @@ Los nuevos guardados y ediciones, tanto manuales como desde recibos, convierten 
 
 La normalización solo recibe el supermercado, nunca los nombres de productos. No altera precios, cantidades, descuentos, presupuesto ni el JSON/archivo original del recibo. No requiere SQL, cambios de OpenAI ni reescritura del historial. Los duplicados se comparan reconociendo variantes antiguas, sin modificar esas filas. Las operaciones ya pendientes conservan su UUID y payload original, incluso si el nombre antiguo no es canónico.
 
-Caché activa: `casa-shell-v13-supermarket-names`. Pruebas: `npm test` y `npm run test:ui`, con Supabase/OpenAI simulados, incluyendo ambas rutas, corrección manual, tiendas desconocidas, productos intactos, recuperación de operaciones anteriores y duplicados por variantes de cadena.
+Caché activa: `casa-shell-v14-inicio-002`. Pruebas: `npm test` y `npm run test:ui`, con Supabase/OpenAI simulados, incluyendo ambas rutas, corrección manual, tiendas desconocidas, productos intactos, recuperación de operaciones anteriores y duplicados por variantes de cadena.
+
+
+## Inicio 002
+
+Inicio conserva sus datos y fórmulas: dos tarjetas iguales para saldo disponible/gastado, presupuesto mensual a ancho completo con barra de disponibilidad y saldo disponible de presupuesto, y recomendación hasta el domingo. Al terminar el mes antes del domingo, el período indica «hasta fin de mes»; se utiliza la misma fecha final y número de días calculados anteriormente. Se elimina «A TU RITMO» y la explicación anterior. El texto inferior muestra el saldo disponible, siguiendo la solicitud aunque la captura de referencia mostrase el gasto.
+
+Los importes usan el formato monetario existente y cálculos en céntimos. La tipografía de las tarjetas se adapta a su contenedor y longitud; los importes extremadamente largos pueden ocupar más de una línea, sin recorte ni scroll horizontal. Los estados de presupuesto cero/superado, colores por disponibilidad, atributos accesibles y movimiento reducido siguen vigentes. El área desplazable reserva espacio para la navegación y las áreas seguras.
+
+La cabecera usa `icon.svg`, también utilizado por el manifest; PNG 192/512 regenerados con `npm run icons`. La casa morada sobre azul oscuro reemplaza el icono verde anterior. La navegación mantiene sus acciones, estados activos y botón +, con iconos SVG sin depender de glifos variables entre dispositivos. Caché: `casa-shell-v14-inicio-002`.
+
+Validación: `npm test`, `npm run test:ui` y `npm run test:home`. La prueba específica cubre 320/360/390/430 px, tablet y escritorio, importes positivos/negativos largos, disponibilidad 100/60/30/0%, presupuesto cero/excedido, domingo/lunes, fin de mes, actualización de compras/presupuesto, navegación, reducción de movimiento e iconos pequeños. Supabase/Auth/OpenAI se simulan; no se consultan datos reales. Las capturas se generan en `/tmp/casa-inicio-002-<ancho>.png` con presupuesto 600,00 €, gasto 101,05 €, saldo 498,95 € y recomendación 157,56 € para el 13 de octubre de 2026.
+
+Pendiente de comprobación manual: áreas seguras en teléfonos físicos y actualización del icono de instalaciones existentes por Android/iOS. Los lanzadores pueden tardar en refrescar sus iconos; la caché de la web no garantiza un cambio inmediato del icono del sistema. No hay cambios de SQL, Supabase, extracción, autenticación o fórmulas.

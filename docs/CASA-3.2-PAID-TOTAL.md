@@ -23,7 +23,7 @@ Comprobar las definiciones de `casa_save_receipt` y `casa_save_purchase`: la pri
 
 Aplicar SQL antes de activar el frontend CASA 3.2 en una publicación autorizada. Hasta entonces, clientes antiguos siguen bloqueando diferencias en su propia validación. Si un cliente nuevo se encuentra con la RPC antigua, muestra una indicación para aplicar la migración y conserva el recibo pendiente; no hay que cambiar el total ni inventar ajustes.
 
-Tras actualizar la PWA con conexión, recargar o volver a abrir para usar el shell `casa-shell-v13-supermarket-names`. No recargar una revisión sin guardar sin comprobar su recuperación. Probar, cuando se autorice la activación, el total pagado, una edición, las pantallas compartidas y un reintento con el mismo UUID.
+Tras actualizar la PWA con conexión, recargar o volver a abrir para usar el shell `casa-shell-v14-inicio-002`. No recargar una revisión sin guardar sin comprobar su recuperación. Probar, cuando se autorice la activación, el total pagado, una edición, las pantallas compartidas y un reintento con el mismo UUID.
 
 ## Verificación automatizada
 
