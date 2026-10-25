@@ -1,3 +1,5 @@
+> CASA 3.3: esta guía describe contratos anteriores. Completar después la [instalación de períodos/FUN](CASA-3.3-FUN-PERIODS.md) antes de publicar el cliente actual.
+
 # CASA 3.2 — Aplicación manual del total pagado
 
 ## Contrato
@@ -23,7 +25,7 @@ Comprobar las definiciones de `casa_save_receipt` y `casa_save_purchase`: la pri
 
 Aplicar SQL antes de activar el frontend CASA 3.2 en una publicación autorizada. Hasta entonces, clientes antiguos siguen bloqueando diferencias en su propia validación. Si un cliente nuevo se encuentra con la RPC antigua, muestra una indicación para aplicar la migración y conserva el recibo pendiente; no hay que cambiar el total ni inventar ajustes.
 
-Tras actualizar la PWA con conexión, recargar o volver a abrir para usar el shell `casa-shell-v14-inicio-002`. No recargar una revisión sin guardar sin comprobar su recuperación. Probar, cuando se autorice la activación, el total pagado, una edición, las pantallas compartidas y un reintento con el mismo UUID.
+Tras actualizar la PWA con conexión, recargar o volver a abrir para usar el shell `casa-shell-v15-fun-periods`. No recargar una revisión sin guardar sin comprobar su recuperación. Probar, cuando se autorice la activación, el total pagado, una edición, las pantallas compartidas y un reintento con el mismo UUID.
 
 ## Verificación automatizada
 
