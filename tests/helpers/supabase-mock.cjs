@@ -1,6 +1,8 @@
 // In-memory Supabase substitute. All mutations affect these fixtures only.
 module.exports=function installMock(seed){
   const data={purchases:seed.purchases||[],items:seed.items||[],purchase_adjustments:seed.adjustments||[],purchase_receipts:seed.receipts||[],household:{id:'test-home',name:'Casa de prueba',monthly_budget:seed.budget??600,invite_code:'test-invite'}};
+  const now=new Date(),month=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  data.budget_periods=seed.periods??[{id:month,household_id:'test-home',starts_on:month+'-01',ends_on:null,purchases_budget:seed.budget??600,fun_budget:240}];data.fun_expenses=seed.fun||[];
   const calls=[];const operations=new Map();
   data.purchases.forEach(p=>p.revision??=0);
   let session=seed.signedOut?null:{user:{id:'test-user',email:'test@example.com'},access_token:'synthetic-token'},callback;
@@ -20,6 +22,8 @@ module.exports=function installMock(seed){
     then(resolve,reject){return this.execute().then(resolve,reject);}
     async execute(){
       calls.push({table:this.table,operation:this.operation,from:this.from,to:this.to});
+      if(seed.noPeriodsMigration&&['budget_periods','fun_expenses'].includes(this.table))return {data:null,error:{code:'PGRST205',message:'Missing periods table'}};
+      if(seed.failPeriods&&this.table==='budget_periods')return {data:null,error:{message:'Periods read failed'}};
       if(seed.noMigration&&this.table==='purchases'&&this.columns?.includes('revision'))return {data:null,error:{code:'42703',message:'Missing revision'}};
       if(seed.failHousehold&&this.operation==='read'&&this.table==='households')return {data:null,error:{message:'Simulated household failure'}};
       if(seed.failWrite&&this.operation!=='read')return {data:null,error:{message:'Simulated write failure'}};
@@ -54,6 +58,25 @@ module.exports=function installMock(seed){
   }};return query;
  }
  return (async()=>{calls.push({operation:name});
+ if(name==='casa_fun_write'||name==='casa_start_period'){
+  if(seed.delay)await new Promise(resolve=>setTimeout(resolve,seed.delay));
+  if(seed.failWrite)return {error:{code:'42501',message:'Simulated write failure'}};
+  if(args.p_household_id!=='test-home')return {error:{code:'42501',message:'Foreign household'}};
+  const signature=JSON.stringify(args),old=operations.get(args.p_operation_id);if(old)return old.signature===signature?{data:structuredClone(old.result),error:null}:{error:{code:'P0001',message:'Different pending payload'}};
+  let result;
+  if(name==='casa_start_period'){
+   const current=data.budget_periods.find(p=>!p.ends_on);if(!current||current.id!==args.p_expected_period)return {error:{code:'40001',message:'El período cambió. Actualiza.'}};
+   const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+   if(args.p_start<=current.starts_on||args.p_start>date)return {error:{code:'P0001',message:'Invalid period date'}};
+   current.ends_on=args.p_start;result={id:'period-'+(++nextId),household_id:'test-home',starts_on:args.p_start,ends_on:null,purchases_budget:600,fun_budget:240,created_by:'test-user'};data.budget_periods.push(result);
+  }else{
+   const row=data.fun_expenses.find(r=>r.id===args.p_expense_id);if(args.p_expense_id&&(!row||row.revision!==args.p_expected_revision))return {error:{code:'40001',message:'El gasto cambió.'}};
+   if(args.p_delete){data.fun_expenses=data.fun_expenses.filter(r=>r.id!==row.id);result={deleted:row.id};}
+   else{result={...(row||{id:'fun-'+(++nextId),household_id:'test-home',created_by:'test-user'}),amount:args.p_amount,category:args.p_category,spent_on:args.p_date,description:args.p_description,revision:(row?.revision||0)+1};data.fun_expenses=data.fun_expenses.filter(r=>r.id!==result.id).concat(result);}
+  }
+  operations.set(args.p_operation_id,{signature,result:structuredClone(result)});if(seed.failReadAfterWrite)seed.failRead=true;
+  if(seed.loseResponse){seed.loseResponse=false;return {error:{message:'Simulated lost response'}};}return {data:structuredClone(result),error:null};
+ }
  if(name==='casa_receipt_begin'){
   const existing=data.purchase_receipts.find(r=>r.id===args.p_id);if(existing)return {data:existing,error:null};
   const row={id:args.p_id,household_id:args.p_household_id,created_by:'test-user',path:args.p_household_id+'/'+args.p_id+'/original',mime:args.p_mime,bytes:args.p_bytes,status:'upload_pending',created_at:new Date().toISOString()};data.purchase_receipts.push(row);return {data:row,error:null};

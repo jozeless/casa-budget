@@ -64,7 +64,7 @@
   }
   function dataIntelligence(purchases,items,month,budget,adjustments=[]){
     const all=[...new Map(purchases.map(p=>[p.id,p])).values()];
-    const selected=inMonth(all,month),ids=new Set(selected.map(p=>p.id));
+    const selected=typeof month==='object'?periodRows(all,month):inMonth(all,month),ids=new Set(selected.map(p=>p.id));
     const spent=total(selected),count=selected.length,limit=cents(budget),stores=new Map(),products=new Map();
     for(const purchase of selected){
       const key=storeKey(purchase.store);
@@ -80,11 +80,11 @@
     let generalAdjustments=0;
     for(const a of adjustments){if(!ids.has(a.purchase_id))continue;const item=a.item_id&&items.find(i=>i.id===a.item_id&&i.purchase_id===a.purchase_id);if(item){const entry=products.get(productKey(item.name));if(entry)entry.attributed=(entry.attributed||0)+Number(a.amount_cents);}else generalAdjustments+=Number(a.amount_cents);}
     const sort=(a,b)=>b.total-a.total||a.name.localeCompare(b.name,'es');
-    const [year,number]=month.split('-').map(Number);
+    const [year,number]=typeof month==='string'?month.split('-').map(Number):[];
     return {generalAdjustments,summary:{spent,count,average:count?Math.round(spent/count):null,used:limit>0?spent/limit*100:null},
       stores:[...stores.values()].map(s=>({...s,percentage:spent?s.total/spent*100:0})).sort(sort),
       products:[...products.values()].map(p=>({key:p.key,name:p.name,total:p.total,count:p.ids.size,...(p.attributed?{attributed:p.attributed}:{})})).sort(sort),
-      monthly:evolution(all,new Date(year,number-1,1)),weekly:weeklySpending(selected,month)};
+      monthly:typeof month==='string'?evolution(all,new Date(year,number-1,1)):[],weekly:typeof month==='string'?weeklySpending(selected,month):periodWeekly(selected,month)};
   }
   function dataMonths(purchases,current,previous=''){
     const index=key=>{const [y,m]=key.split('-').map(Number);return y*12+m-1;};
@@ -92,7 +92,23 @@
     for(const key of [...purchases.map(p=>p.purchased_on.slice(0,7)),...(previous?[previous]:[])]){first=Math.min(first,index(key));last=Math.max(last,index(key));}
     return Array.from({length:last-first+1},(_,i)=>{const value=last-i;return `${String(Math.floor(value/12)).padStart(4,'0')}-${String(value%12+1).padStart(2,'0')}`;});
   }
-  const api={supermarketName,dataMonths,storeKey,weeklySpending,dataIntelligence,remainingBudget,productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
+  const funCategories=['Benzine/Parkeren','entree/tickets','food','overig','hotel'];
+  const localDate=(value=new Date())=>new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Amsterdam',year:'numeric',month:'2-digit',day:'2-digit'}).format(value);
+  const periodRows=(rows,period,dateKey='purchased_on')=>period?rows.filter(row=>row[dateKey]>=period.starts_on&&(!period.ends_on||row[dateKey]<period.ends_on)):[];
+  function activePeriod(periods,today=localDate()){return periods.find(p=>p.starts_on<=today&&(!p.ends_on||today<p.ends_on))||null;}
+  function periodAvailability(limit,spent){const value=remainingBudget(limit,spent);value.level=value.percentage>50?'high':value.percentage>20?'medium':'low';return value;}
+  function periodWeekly(rows,period,today=localDate()){
+    if(!period)return [];
+    const selected=periodRows(rows,period);let end=[today,...selected.map(p=>p.purchased_on)].sort().at(-1);if(period.ends_on){const last=new Date(period.ends_on+'T12:00:00Z');last.setUTCDate(last.getUTCDate()-1);end=last.toISOString().slice(0,10);}
+    const cursor=new Date(period.starts_on+'T12:00:00Z'),weeks=[];cursor.setUTCDate(cursor.getUTCDate()-((cursor.getUTCDay()+6)%7));
+    while(cursor.toISOString().slice(0,10)<=end){const start=cursor.toISOString().slice(0,10),last=new Date(cursor);last.setUTCDate(last.getUTCDate()+6);const finish=last.toISOString().slice(0,10);weeks.push({from:start<period.starts_on?period.starts_on:start,to:finish>end?end:finish,total:total(selected.filter(p=>p.purchased_on>=start&&p.purchased_on<=finish))});cursor.setUTCDate(cursor.getUTCDate()+7);}
+    return weeks;
+  }
+  function periodData(purchases,items,period,adjustments=[],periods=[]){
+    const model=dataIntelligence(purchases,items,period,period?.purchases_budget||0,adjustments);
+    model.periods=periods.filter(p=>period&&p.starts_on<=period.starts_on).map(p=>({month:p.id,label:p.starts_on,total:total(periodRows(purchases,p))}));model.weekly=periodWeekly(purchases,period);return model;
+  }
+  const api={funCategories,localDate,periodRows,activePeriod,periodAvailability,periodWeekly,periodData,supermarketName,dataMonths,storeKey,weeklySpending,dataIntelligence,remainingBudget,productKey,productHistory,cents,monthKey,inMonth,total,weekly,evolution,normalize,history};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   else root.CASA_BUDGET=api;
 })(typeof window!=='undefined'?window:globalThis);

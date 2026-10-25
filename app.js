@@ -2,17 +2,17 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const fmt = n => new Intl.NumberFormat('es-NL', {style:'currency',currency:'EUR'}).format(Number(n)||0);
-const dateLocal = () => {const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+const dateLocal = () => window.CASA_BUDGET.localDate();
 const safe = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const monthKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-const store = {client:null,user:null,household:null,purchases:[],items:[],adjustments:[],receipts:[],selected:null,loaded:false,dataVersion:0,page:'home',historyLimit:50};
+
+const store = {client:null,user:null,household:null,purchases:[],items:[],adjustments:[],receipts:[],selected:null,loaded:false,dataVersion:0,page:'home',historyLimit:50,periods:[],fun:[],wallet:'purchases'};
 const analytics=window.CASA_BUDGET;
 let loadTask=null;
 let routeTask=null;
 const dataView={tab:'summary',shop:null,storeLimit:50,productLimit:50,purchaseLimit:50};
 let dataCache=null;
 let editingPurchase=null;
-let phase2Ready=true;
+let phase2Ready=true,phase3Ready=false;
 let productRows=[],productName='',productEpoch=0;
 const pendingKey=()=>`casa_pending_purchase_${store.user?.id}_${store.household?.id}`;
 function pendingWrite(){return JSON.parse(localStorage.getItem(pendingKey())||'null');}
@@ -20,7 +20,7 @@ function phaseError(error){
   if(error?.code==='PGRST202'||error?.code==='42703')return 'Falta aplicar la migración de Fase 2 en Supabase. Contacta con quien administra CASA.';
   return error?.message||'No se pudo conectar. Intenta nuevamente.';
 }
-const receiptUI=window.CASA_RECEIPT_UI?.({getStore:()=>store,notice:msg=>notice(msg),duplicateApproval,applySaved,reloadAfterWrite,refresh});
+const receiptUI=window.CASA_RECEIPT_UI?.({getStore:()=>store,notice:msg=>notice(msg),duplicateApproval,applySaved,reloadAfterWrite,refresh,canWrite:()=>phase3Ready&&store.loaded});
 function applySaved(saved){
  const known=store.purchases.find(p=>p.id===saved.purchase.id);if(known&&Number(known.revision)>Number(saved.purchase.revision))return;
  store.purchases=store.purchases.filter(p=>p.id!==saved.purchase.id).concat(saved.purchase);
@@ -40,15 +40,16 @@ function checkCalendar(){
 function scheduleCalendar(){
   if(!window.setTimeout)return;
   window.clearTimeout(calendarTimer);
-  const now=new Date(),midnight=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
-  calendarTimer=window.setTimeout(()=>{checkCalendar();scheduleCalendar();},midnight-now+50);
+  // Check Amsterdam's business date on minute boundaries, independent of the device timezone/DST.
+  const now=Date.now();calendarTimer=window.setTimeout(()=>{checkCalendar();scheduleCalendar();},60000-now%60000+50);
 }
 function resumeCalendar(){checkCalendar();scheduleCalendar();}
 function resetDashboard(){
   receiptUI?.reset();store.adjustments=[];store.receipts=[];if(receiptUI){$('data-adjustments-note').textContent='';$('detail-adjustments').innerHTML='';$('view-receipt').classList.add('hidden');}
-  for(const id of ['remaining','spent','budget','settings-budget','weekly-amount','budget-available-amount','budget-limit'])$(id).textContent='—';
+  phase3Ready=false;store.periods=[];store.fun=[];store.wallet='purchases';funEditing=null;periodCandidate=null;$('fun-form').reset();$('fun-status').textContent='';$('period-status').textContent='';$('period-confirm-text').textContent='';$('period-start').value='';delete $('period-start').dataset.manual;writeControls();
+  for(const id of ['remaining','settings-budget','settings-fun-budget'])$(id).textContent='—';
   for(const id of ['purchases-list','store-report','product-report','monthly-report'])$(id).innerHTML='';
-  $('purchase-count').textContent='';$('weekly-period').textContent='';$('progress-bar').style.width='0%';
+  $('purchase-count').textContent='';$('period-heading').textContent='';$('fun-list').innerHTML='';$('fun-summary').textContent='';$('fun-categories').innerHTML='';$('settings-period').textContent='';$('progress-bar').style.width='0%';
   $('budget-warning').classList.add('hidden');$('budget-zero').classList.add('hidden');
   delete $('budget-progress').dataset.level;
   $('budget-progress').setAttribute('aria-valuenow','0');$('budget-progress').setAttribute('aria-valuetext','Presupuesto pendiente de actualizar');
@@ -57,13 +58,13 @@ function resetDashboard(){
   }
   store.page='home';store.historyLimit=50;
   dataCache=null;dataView.tab='summary';dataView.shop=null;dataView.storeLimit=50;dataView.productLimit=50;dataView.purchaseLimit=50;
-  $('data-product-search').value='';$('data-evolution').value='monthly';
+  $('data-product-search').value='';$('data-evolution').value='periods';
   for(const id of ['data-total','data-count','data-average','data-used'])$(id).textContent='—';
   $('data-store-purchases').innerHTML='';$('data-empty').classList.add('hidden');
   for(const id of ['data-budget-note','data-product-count','data-evolution-note','data-store-title'])$(id).textContent='';
   $('data-store-detail').classList.add('hidden');
   selectDataTab('summary');
-  for(const id of ['purchase-dialog','detail-dialog','budget-dialog','add-menu-dialog','product-dialog','duplicate-dialog'])if($(id).open)$(id).close();
+  for(const id of ['purchase-dialog','detail-dialog','fun-dialog','period-dialog','add-menu-dialog','product-dialog','duplicate-dialog'])if($(id).open)$(id).close();
 }
 const view = name => {
   ['setup','auth','recovery','home-setup','dashboard'].forEach(v=>$(v+'-view').classList.toggle('hidden',v!==name));
@@ -243,7 +244,7 @@ async function paged(query){
 }
 function dataStatus(message){
   $('data-status').textContent=message;
-  $('data-status').classList.toggle('sr-only',message==='Compras actualizadas');
+  $('data-status').classList.toggle('sr-only',message==='Datos actualizados');
 }
 async function refresh(force=false){
   if(!store.household)return;
@@ -255,7 +256,7 @@ async function refresh(force=false){
   }
   if(store.loaded){render();return;}
   const householdId=store.household.id,version=store.dataVersion;
-  dataStatus('Cargando compras…');$('refresh-data-btn').disabled=true;
+  dataStatus('Cargando datos del hogar…');$('refresh-data-btn').disabled=true;
   const promise=(async()=>{
     try{
       let household=store.household;
@@ -265,6 +266,9 @@ async function refresh(force=false){
         if(!result.data)throw Error('No se pudo consultar el presupuesto del hogar.');
         household=result.data;
       }
+      const periods=await paged(()=>store.client.from('budget_periods').select('*').eq('household_id',householdId).order('starts_on',{ascending:false}).order('id'));
+      if(!periods.length||!analytics.activePeriod(periods))throw Error('CASA 3.3: falta inicializar los períodos del hogar. Consulta la guía de instalación.');
+      const fun=await paged(()=>store.client.from('fun_expenses').select('*').eq('household_id',householdId).order('spent_on',{ascending:false}).order('id'));
       const purchaseQuery=columns=>store.client.from('purchases').select(columns).eq('household_id',householdId).order('purchased_on',{ascending:false}).order('created_at',{ascending:false}).order('id',{ascending:false});
       let purchases,ready=true;
       try{purchases=await paged(()=>purchaseQuery('id,store,purchased_on,total,created_at,revision'));}
@@ -288,13 +292,13 @@ async function refresh(force=false){
       let receipts=[];if(receiptUI){try{receipts=await paged(()=>store.client.from('purchase_receipts').select('id,purchase_id,path,status').eq('household_id',householdId).order('id'));}catch(error){if(!['PGRST205','42P01'].includes(error.code))throw error;}}
       if(store.household?.id!==householdId||store.dataVersion!==version)return;
       store.adjustments=adjustments;store.receipts=receipts;
-      phase2Ready=ready;store.household=household;store.purchases=purchases;store.items=items;store.loaded=true;
+      phase3Ready=true;store.periods=periods;store.fun=fun;writeControls();phase2Ready=ready;store.household=household;store.purchases=purchases;store.items=items;store.loaded=true;
       $('home-display').textContent=household.name;$('invite-code').textContent=household.invite_code;
-      updateFilters();render();dataStatus(phase2Ready?'Compras actualizadas':'Compras actualizadas. Falta la migración de Fase 2 para guardar o editar compras.');
+      updateFilters();render();dataStatus(phase2Ready?'Datos actualizados':'Datos actualizados. Falta la migración de Fase 2 para guardar o editar compras.');
     }catch(error){
       if(store.household?.id===householdId&&store.dataVersion===version){
-        store.loaded=hadSnapshot;
-        dataStatus('No se pudieron actualizar los datos. '+(hadSnapshot?'La información visible puede estar desactualizada. ':'')+'Pulsa Actualizar para reintentar.');
+        phase3Ready=false;writeControls();store.loaded=hadSnapshot;$('remaining').textContent='—';$('period-heading').textContent='Datos pendientes de verificar';
+        dataStatus((['42P01','PGRST205','PGRST202','42703'].includes(error.code)?'Falta aplicar la migración CASA 3.3. ':error.message?.includes('CASA 3.3')?error.message+' ':'')+'No se pudieron actualizar los datos. '+(hadSnapshot?'La información visible puede estar desactualizada. ':'')+'Pulsa Actualizar para reintentar.');
       }
       throw error;
     }finally{$('refresh-data-btn').disabled=false;}
@@ -313,66 +317,53 @@ function navigate(page, resetScroll=true){
   $('screen-heading').textContent={home:'Inicio',history:'Historial',data:'Data',settings:'Settings'}[page];
   if(resetScroll){document.querySelector?.('.shell')?.scrollTo({top:0});$('screen-heading').focus?.({preventScroll:true});}
 }
+function currentPeriod(){return analytics.activePeriod(store.periods);}
+function legacyPeriod(){const end=[...store.periods].sort((a,b)=>a.starts_on.localeCompare(b.starts_on))[0]?.starts_on||dateLocal();const dates=[end,...store.purchases.map(p=>p.purchased_on),...store.fun.map(p=>p.spent_on)].sort();return {id:'legacy',starts_on:dates[0],ends_on:end,purchases_budget:0,fun_budget:0};}
+function selectedPeriod(id){return $(id).value==='legacy'?legacyPeriod():store.periods.find(p=>p.id===$(id).value)||currentPeriod();}
+function periodLabel(p){return p.id==='legacy'?'Histórico anterior / pruebas':localLabel(p.starts_on)+(p.ends_on?' – antes de '+localLabel(p.ends_on):' · Hasta nueva recarga');}
+function localLabel(date){return new Date(date+'T12:00:00Z').toLocaleDateString('es-ES',{timeZone:'Europe/Amsterdam',day:'numeric',month:'long',year:'numeric'});}
 function updateFilters(){
-  const current=monthKey(new Date());
-  const months=[...new Set([current,...store.purchases.map(p=>p.purchased_on.slice(0,7)),...analytics.evolution([],new Date()).map(m=>m.month)])].sort().reverse();
-  for(const id of ['history-month','data-month']){
-    const previous=$(id).value;
-    const followCurrent=$(id).dataset.manual!=='true'&&previous===$(id).dataset.currentMonth;
-    const choices=id==='data-month'?analytics.dataMonths(store.purchases,current,previous):months;
-    if(previous&&!choices.includes(previous))choices.push(previous);
-    $(id).innerHTML=(id==='history-month'?'<option value="">Todos los meses</option>':'')+choices.map(month=>`<option value="${month}">${monthLabel(month)}</option>`).join('');
-    $(id).value=followCurrent?current:previous!==''&&choices.includes(previous)?previous:($(id).dataset.initialized==='true'&&id==='history-month'?'':current);
-    $(id).dataset.initialized='true';$(id).dataset.currentMonth=current;
-  }
-  const supermarket=$('history-store').value;
-  const supermarkets=[...new Set(store.purchases.map(p=>p.store))].sort((a,b)=>a.localeCompare(b,'es'));
-  $('history-store').innerHTML='<option value="">Todos los supermercados</option>'+supermarkets.map(name=>`<option value="${safe(name)}">${safe(name)}</option>`).join('');
-  $('history-store').value=supermarkets.includes(supermarket)?supermarket:'';
+ const current=currentPeriod()?.id||'';
+ for(const id of ['history-month','data-month']){const el=$(id),previous=el.value;el.innerHTML=store.periods.map(p=>`<option value="${safe(p.id)}">${safe(periodLabel(p))}</option>`).join('')+'<option value="legacy">Histórico anterior / pruebas</option>';el.value=el.dataset.manual==='true'&&(previous==='legacy'||store.periods.some(p=>p.id===previous))?previous:current;}
+ const supermarket=$('history-store').value,names=[...new Set(store.purchases.map(p=>p.store))].sort((a,b)=>a.localeCompare(b,'es'));
+ $('history-store').innerHTML='<option value="">Todos los supermercados</option>'+names.map(name=>`<option value="${safe(name)}">${safe(name)}</option>`).join('');$('history-store').value=names.includes(supermarket)?supermarket:'';
 }
-function monthLabel(month){return new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,1).toLocaleDateString('es-ES',{month:'long',year:'numeric'});}
+
 function purchaseCards(purchases){
   return purchases.length?purchases.map(p=>`<button class="purchase-card" data-purchase="${p.id}"><span class="purchase-icon" aria-hidden="true">🛒</span><span class="purchase-text"><b>${safe(p.store)}</b><small>${new Date(p.purchased_on+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'})}</small></span><span class="purchase-price">${fmt(p.total)}</span></button>`).join(''):'<div class="empty">No hay compras para este periodo o búsqueda.</div>';
 }
 function render(){
   if(!store.loaded||!store.household)return;
   renderedDate=dateLocal();
-  const today=new Date(),current=monthKey(today),purchases=analytics.inMonth(store.purchases,current);
-  const spent=analytics.total(purchases),budget=analytics.cents(store.household.monthly_budget),remaining=budget-spent;
-  $('period-heading').textContent=monthLabel(current);
-  $('remaining').textContent=fmt(remaining/100);$('spent').textContent=fmt(spent/100);$('budget').textContent=fmt(budget/100);
-  $('budget-available-amount').textContent=fmt(remaining/100);$('budget-limit').textContent=fmt(budget/100);
-  for(const id of ['remaining','spent'])$(id).style.setProperty('--amount-length',String(Math.max(8,$(id).textContent.length)));
-  const availability=analytics.remainingBudget(budget/100,spent/100);
-  $('settings-budget').textContent=fmt(budget/100);
-  $('progress-bar').style.width=`${availability.percentage}%`;
-  $('budget-progress').dataset.level=availability.level;
-  $('budget-zero').classList.toggle('hidden',!availability.zeroBudget);
-  $('budget-progress').setAttribute('aria-valuenow',String(Math.round(availability.percentage)));
-  $('budget-progress').setAttribute('aria-valuetext',`${availability.zeroBudget?'Sin presupuesto mensual. ':''}${fmt(remaining/100)} disponibles de ${fmt(budget/100)}; ${fmt(spent/100)} gastados`);
-  $('budget-warning').classList.toggle('hidden',remaining>=0);
-  const weekly=analytics.weekly(store.household.monthly_budget,store.purchases,today);
-  $('weekly-amount').textContent=fmt(weekly.amount/100);
-  const dateFormat={day:'numeric',month:'short'};
-  $('weekly-period').textContent=`${weekly.from.toLocaleDateString('es-ES',dateFormat)} – ${weekly.to.toLocaleDateString('es-ES',dateFormat)} · ${weekly.daysThisWeek} ${weekly.daysThisWeek===1?'día':'días'} hasta ${weekly.to.getDay()===0?'el domingo':'fin de mes'}`;
+  const period=currentPeriod();if(!period)return;
+  const isFun=store.wallet==='fun',rows=analytics.periodRows(isFun?store.fun:store.purchases,period,isFun?'spent_on':'purchased_on');
+  const spent=isFun?rows.reduce((n,r)=>n+analytics.cents(r.amount),0):analytics.total(rows),limit=Number(isFun?period.fun_budget:period.purchases_budget),remaining=analytics.cents(limit)-spent;
+  $('period-heading').textContent='Desde el '+localLabel(period.starts_on)+' · Hasta nueva recarga';
+  $('remaining').textContent=fmt(remaining/100);$('remaining').style.setProperty('--amount-length',String(Math.max(8,$('remaining').textContent.length)));
+  const availability=analytics.periodAvailability(limit,spent/100);
+  $('settings-budget').textContent=fmt(period.purchases_budget);$('settings-fun-budget').textContent=fmt(period.fun_budget);$('settings-period').textContent='Desde el '+localLabel(period.starts_on);
+  if($('period-start').dataset.manual!=='true')$('period-start').value=dateLocal();$('period-start').max=dateLocal();
+  $('progress-bar').style.width=`${availability.percentage}%`;$('budget-progress').dataset.level=availability.level;
+  $('budget-zero').classList.toggle('hidden',!availability.zeroBudget);$('budget-warning').classList.toggle('hidden',remaining>=0);
+  $('budget-progress').setAttribute('aria-valuenow',String(Math.round(availability.percentage)));$('budget-progress').setAttribute('aria-valuetext',`${store.wallet==='fun'?'FUN':'Compras'}: ${fmt(remaining/100)} disponibles; ${fmt(spent/100)} gastados`);
+  document.querySelectorAll('[data-wallet]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.wallet===store.wallet)));
+  $('add-menu-btn').setAttribute('aria-label',isFun?'Añadir gasto FUN':'Añadir compra');
+  for(const id of ['history-store-label','purchases-list','purchase-data-tabs'])$(id).classList.toggle('hidden',isFun);
+  $('fun-list').classList.toggle('hidden',!isFun);$('fun-data').classList.toggle('hidden',!isFun);
+  $('history-search').placeholder=isFun?'Categoría o descripción':'Producto o supermercado';$('history-title').textContent=isFun?'Gastos FUN':'Compras del hogar';
   renderHistory();
   if(store.loaded){const model=dataModel();renderDataStores(model);renderDataProducts(model);}
   renderData();navigate(store.page,false);
 }
 function renderHistory(){
   if(!store.loaded)return;
-  const results=analytics.history(store.purchases,store.items,{month:$('history-month').value,supermarket:$('history-store').value,query:$('history-search').value});
+  if(store.wallet==='fun'){renderFunHistory();return;}
+  const results=analytics.history(analytics.periodRows(store.purchases,selectedPeriod('history-month')),store.items,{supermarket:$('history-store').value,query:$('history-search').value});
   $('purchase-count').textContent=`${results.length} compras`;
   $('purchases-list').innerHTML=purchaseCards(results.slice(0,store.historyLimit));
   $('history-more-btn').classList.toggle('hidden',results.length<=store.historyLimit);
 }
-function dataModel(){
-  const month=$('data-month').value,budget=store.household.monthly_budget;
-  if(!dataCache||dataCache.month!==month||dataCache.budget!==budget||dataCache.purchases!==store.purchases||dataCache.items!==store.items||dataCache.adjustments!==store.adjustments){
-    dataCache={month,budget,purchases:store.purchases,items:store.items,adjustments:store.adjustments,model:analytics.dataIntelligence(store.purchases,store.items,month,budget,store.adjustments)};
-  }
-  return dataCache.model;
-}
+function dataModel(){const period=selectedPeriod('data-month');if(!dataCache||dataCache.period!==period||dataCache.periods!==store.periods||dataCache.purchases!==store.purchases||dataCache.items!==store.items||dataCache.adjustments!==store.adjustments)dataCache={period,periods:store.periods,purchases:store.purchases,items:store.items,adjustments:store.adjustments,model:analytics.periodData(store.purchases,store.items,period,store.adjustments,[...store.periods].reverse())};return dataCache.model;}
 const percentage=value=>new Intl.NumberFormat('es-ES',{maximumFractionDigits:1}).format(value)+' %';
 function selectDataTab(tab,focus=false){
   if(!['summary','stores','products'].includes(tab))return;
@@ -387,27 +378,29 @@ function selectDataTab(tab,focus=false){
 }
 function renderData(){
   if(!store.loaded||!store.household)return;
+  if(store.wallet==='fun'){for(const n of ['summary','stores','products'])$('data-'+n+'-panel').classList.add('hidden');renderFunData();return;}
+  for(const n of ['summary','stores','products'])$('data-'+n+'-panel').classList.toggle('hidden',dataView.tab!==n);
   const model=dataModel(),summary=model.summary;
   $('data-total').textContent=fmt(summary.spent/100);$('data-count').textContent=String(summary.count);
   $('data-average').textContent=summary.average===null?'Sin compras':fmt(summary.average/100);
   $('data-used').textContent=summary.used===null?'No aplicable':percentage(summary.used);
   $('data-empty').classList.toggle('hidden',summary.count!==0);
-  $('data-budget-note').textContent=$('data-month').value===monthKey(new Date())?'Comparación con el presupuesto mensual vigente.':'Este mes se compara con el presupuesto mensual actual, no con un presupuesto histórico.';
+  $('data-budget-note').textContent=selectedPeriod('data-month')?.id==='legacy'?'Histórico de pruebas, sin presupuesto oficial.':'Comparación con el presupuesto congelado de este período.';
   if(dataView.tab==='summary'){
     const weekly=$('data-evolution').value==='weekly';
     const dateLabel=value=>{const [y,m,d]=value.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('es-ES',{day:'numeric',month:'short'});};
-    const values=weekly?model.weekly.map(w=>[`${dateLabel(w.from)} – ${dateLabel(w.to)}`,w.total]):model.monthly.map(m=>[monthLabel(m.month),m.total]);
-    $('data-evolution-note').textContent=weekly?'Semanas de lunes a domingo; solo se cuentan compras del mes seleccionado.':'Seis meses consecutivos hasta el mes seleccionado, incluidos los meses sin compras.';
+    const values=weekly?model.weekly.map(w=>[`${dateLabel(w.from)} – ${dateLabel(w.to)}`,w.total]):model.periods.map(m=>[m.label,m.total]);
+    $('data-evolution-note').textContent=weekly?'Semanas de lunes a domingo; solo se cuentan compras del período seleccionado.':'Gasto de cada período de recarga, sin mezclar meses calendario.';
     report('monthly-report',values,'');
   }else if(dataView.tab==='stores')renderDataStores(model);
   else renderDataProducts(model);
 }
 function dataRows(id,entries,type,empty){
   const max=entries.reduce((n,e)=>Math.max(n,e.total),1);
-  $(id).innerHTML=entries.length?entries.map(entry=>`<button type="button" class="product-link" data-${type}="${safe(entry.key)}"><span class="report-line"><span>${safe(entry.name)}</span><b>${fmt(entry.total/100)}</b></span><span class="hint">${type==='store'?percentage(entry.percentage)+' del gasto del mes':entry.count+(entry.count===1?' compra distinta':' compras distintas')+(entry.attributed?' · Ajustes atribuibles: '+fmt(entry.attributed/100):'')}</span><span class="report-meter" aria-hidden="true"><span style="width:${entry.total>0?Math.max(2,entry.total/max*100):0}%"></span></span></button>`).join(''):`<p class="muted">${empty}</p>`;
+  $(id).innerHTML=entries.length?entries.map(entry=>`<button type="button" class="product-link" data-${type}="${safe(entry.key)}"><span class="report-line"><span>${safe(entry.name)}</span><b>${fmt(entry.total/100)}</b></span><span class="hint">${type==='store'?percentage(entry.percentage)+' del gasto del período':entry.count+(entry.count===1?' compra distinta':' compras distintas')+(entry.attributed?' · Ajustes atribuibles: '+fmt(entry.attributed/100):'')}</span><span class="report-meter" aria-hidden="true"><span style="width:${entry.total>0?Math.max(2,entry.total/max*100):0}%"></span></span></button>`).join(''):`<p class="muted">${empty}</p>`;
 }
 function renderDataStores(model){
-  dataRows('store-report',model.stores.slice(0,dataView.storeLimit),'store','No hay gastos por supermercado en este mes.');
+  dataRows('store-report',model.stores.slice(0,dataView.storeLimit),'store','No hay gastos por supermercado en este período.');
   $('data-stores-more').classList.toggle('hidden',model.stores.length<=dataView.storeLimit);
   const selected=model.stores.find(s=>s.key===dataView.shop);
   $('data-store-detail').classList.toggle('hidden',!selected);
@@ -420,7 +413,7 @@ function renderDataProducts(model){
   const query=analytics.normalize($('data-product-search').value);
   const products=model.products.filter(p=>analytics.normalize(p.name).includes(query));
   $('data-product-count').textContent=`${products.length} productos`;
-  dataRows('product-report',products.slice(0,dataView.productLimit),'product',model.products.length?'No hay productos que coincidan con la búsqueda.':'No hay productos detallados en este mes.');
+  dataRows('product-report',products.slice(0,dataView.productLimit),'product',model.products.length?'No hay productos que coincidan con la búsqueda.':'No hay productos detallados en este período.');
   $('data-products-more').classList.toggle('hidden',products.length<=dataView.productLimit);
 }
 $('store-report').onclick=event=>{const button=event.target.closest('[data-store]');if(!button||!store.loaded)return;dataView.shop=button.dataset.store;dataView.purchaseLimit=50;renderDataStores(dataModel());};
@@ -466,6 +459,7 @@ function duplicateApproval(){
   });
 }
 function openPurchase(purchase=null){
+  if(!phase3Ready||!store.loaded)throw Error('Actualiza los períodos CASA 3.3 antes de guardar.');
   if(receiptUI&&localStorage.getItem(`casa_pending_receipt_${store.user?.id}_${store.household?.id}`))throw Error('Hay una compra de recibo pendiente. Abre Subir recibo y reintenta antes de registrar otra.');
   const pending=pendingWrite();editingPurchase=purchase;
   $('purchase-form').reset();$('items-container').innerHTML='';
@@ -489,6 +483,7 @@ async function savePurchase(ev){
   ev.preventDefault();const btn=$('save-purchase');if(btn.disabled)return;btn.disabled=true;
   const householdId=store.household?.id,userId=store.user?.id,key=pendingKey();let operation;
   try{
+    if(!phase3Ready||!store.loaded)throw Error('Actualiza CASA: falta aplicar/inicializar CASA 3.3 o verificar los datos.');
     if(!phase2Ready)throw Error('Falta aplicar la migración de Fase 2 en Supabase para guardar o editar compras.');
     const total=Number($('purchase-total').value),storeName=$('purchase-store').value.trim(),date=$('purchase-date').value;
     if(!storeName||storeName.length>80||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(total)||total<=0||total>9999999999.99||Math.abs(total*100-Math.round(total*100))>0.00001)throw Error('Completa supermercado, fecha e importe positivo.');
@@ -539,18 +534,17 @@ async function loadProductHistory(){
     const rows=await paged(()=>store.client.rpc('casa_product_history',{p_household_id:householdId,p_name:name}).order('purchased_on',{ascending:false}).order('purchase_id').order('id'));
     if(epoch!==productEpoch||store.household?.id!==householdId||store.user?.id!==userId)return;
     productRows=rows;const previous=$('product-month').value;
-    const months=[...new Set([...(previous?[previous]:[]),...rows.map(r=>r.purchased_on.slice(0,7))])].sort().reverse();
-    $('product-month').innerHTML='<option value="">Todo</option>'+months.map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');$('product-month').value=previous;
+    $('product-month').innerHTML='<option value="">Todo</option>'+store.periods.map(p=>`<option value="${safe(p.id)}">${safe(periodLabel(p))}</option>`).join('')+'<option value="legacy">Histórico anterior / pruebas</option>';$('product-month').value=previous;
     $('product-status').textContent='Historial actualizado';renderProductHistory();
   }catch(error){if(epoch===productEpoch)$('product-status').textContent=phaseError(error);}
   finally{if(epoch===productEpoch)$('product-retry').disabled=false;}
 }
 function renderProductHistory(){
-  const report=analytics.productHistory(productRows,$('product-month').value);
+  const chosen=$('product-month').value;const report=analytics.productHistory(chosen?analytics.periodRows(productRows,selectedPeriod('product-month')):productRows,'');
   $('product-summary').textContent=`${fmt(report.total/100)} · ${report.count} compras`+(receiptUI?' · Importe registrado del producto; puede ser anterior a descuentos generales y no sumar el gasto pagado; consulta descuentos y ajustes en el detalle de cada compra.':'');
   $('product-history').innerHTML=report.lines.length?report.lines.map(row=>`<div class="product-entry"><b>${safe(row.name)}</b><p>${safe(row.purchased_on)} · ${safe(row.store)}</p><p>Cantidad: ${safe(row.quantity)} · Importe registrado del producto: ${fmt(row.line_total)}</p><button type="button" class="secondary" data-original="${row.purchase_id}">Ver compra original</button></div>`).join(''):'<p class="muted">No hay registros para este periodo.</p>';
 }
-$('product-report').onclick=event=>{const button=event.target.closest('[data-product]');if(!button)return;productName=button.dataset.product;$('product-title').textContent=productName;$('product-month').innerHTML=`<option value="${$('data-month').value}">${monthLabel($('data-month').value)}</option>`;$('product-month').value=$('data-month').value;dialog('product-dialog');loadProductHistory();};
+$('product-report').onclick=event=>{const button=event.target.closest('[data-product]');if(!button)return;productName=button.dataset.product;$('product-title').textContent=productName;$('product-month').innerHTML=`<option value="${$('data-month').value}">${periodLabel(selectedPeriod('data-month'))}</option>`;$('product-month').value=$('data-month').value;dialog('product-dialog');loadProductHistory();};
 $('product-month').onchange=renderProductHistory;$('product-retry').onclick=loadProductHistory;
 $('product-history').onclick=async event=>{
   const button=event.target.closest('[data-original]');if(!button)return;
@@ -628,8 +622,9 @@ $('recovery-retry-btn').onclick=()=>{
 };
 $('auth-form').onsubmit=async e=>{e.preventDefault();try{const r=await store.client.auth.signInWithPassword({email:$('auth-email').value.trim(),password:$('auth-password').value});if(r.error)throw r.error;store.user=r.data.user;await route();}catch(e){fail(e);}};
 $('signup-btn').onclick=async()=>{try{const r=await store.client.auth.signUp({email:$('auth-email').value.trim(),password:$('auth-password').value,options:{emailRedirectTo:'https://jozeless.github.io/casa-budget/'}});if(r.error)throw r.error;if(r.data.session){store.user=r.data.user;await route();}else notice('Cuenta creada. Confirma tu email antes de entrar.');}catch(e){fail(e);}};
-$('create-home-form').onsubmit=async e=>{e.preventDefault();try{const r=await store.client.rpc('create_my_household',{p_name:$('home-name').value.trim(),p_budget:Number($('initial-budget').value)});if(r.error)throw r.error;await route();notice('Hogar creado ✔');}catch(e){fail(e);}};
-$('join-home-form').onsubmit=async e=>{e.preventDefault();try{const r=await store.client.rpc('join_my_household',{p_invite_code:$('join-code').value.trim()});if(r.error)throw r.error;await route();notice('Ya compartís hogar ✔');}catch(e){fail(e);}};
+async function requirePeriodsSchema(){const r=await store.client.from('budget_periods').select('id').range(0,0);if(r.error)throw Error('Falta aplicar la migración CASA 3.3 antes de crear o unirse a un hogar.');}
+$('create-home-form').onsubmit=async e=>{e.preventDefault();try{await requirePeriodsSchema();const r=await store.client.rpc('create_my_household',{p_name:$('home-name').value.trim(),p_budget:Number($('initial-budget').value)});if(r.error)throw r.error;await route();notice('Hogar creado ✔');}catch(e){fail(e);}};
+$('join-home-form').onsubmit=async e=>{e.preventDefault();try{await requirePeriodsSchema();const r=await store.client.rpc('join_my_household',{p_invite_code:$('join-code').value.trim()});if(r.error)throw r.error;await route();notice('Ya compartís hogar ✔');}catch(e){fail(e);}};
 $('logout-btn').onclick=async()=>{const r=await store.client.auth.signOut();if(r.error)fail(r.error);else{store.user=null;store.household=null;store.loaded=false;store.dataVersion++;store.purchases=[];store.items=[];resetDashboard();view('auth');}};
 document.querySelectorAll('[data-page]').forEach(button=>button.onclick=()=>navigate(button.dataset.page));
 $('add-menu-btn').onclick=()=>dialog('add-menu-dialog');
@@ -639,13 +634,12 @@ $('history-search').oninput=()=>{store.historyLimit=50;renderHistory();};
 $('data-month').onchange=()=>{$('data-month').dataset.manual='true';dataView.shop=null;dataView.storeLimit=50;dataView.productLimit=50;dataView.purchaseLimit=50;renderData();};
 $('history-more-btn').onclick=()=>{store.historyLimit+=50;renderHistory();};
 $('new-purchase-btn').onclick=()=>{try{$('add-menu-dialog').close();openPurchase();}catch(error){notice(phaseError(error));}};
-$('new-budget-btn').onclick=()=>{$('budget-input').value=store.household.monthly_budget;dialog('budget-dialog');};
 $('add-item-btn').onclick=()=>addItem();
 $('purchase-form').onsubmit=savePurchase;
-$('budget-form').onsubmit=async e=>{e.preventDefault();try{const amount=Number($('budget-input').value);if(!Number.isFinite(amount)||amount<0)throw Error('Presupuesto inválido');const r=await store.client.from('households').update({monthly_budget:amount}).eq('id',store.household.id).select('monthly_budget').single();if(r.error)throw r.error;store.household.monthly_budget=r.data.monthly_budget;$('budget-dialog').close();render();notice('Presupuesto actualizado');}catch(err){fail(err);}};
 for(const id of ['purchases-list'])$(id).onclick=e=>{const card=e.target.closest('[data-purchase]');if(card)purchaseDetail(card.dataset.purchase);};
 $('delete-purchase').onclick=async()=>{
   const button=$('delete-purchase'),purchase=store.selected;
+  if(!phase3Ready||!store.loaded){notice('Actualiza los períodos CASA 3.3 antes de eliminar.');return;}
   if(button.disabled||!purchase||!confirm(`¿Eliminar la compra de ${purchase.store}?`))return;
   button.disabled=true;
   const householdId=store.household?.id,userId=store.user?.id;
@@ -659,6 +653,87 @@ $('delete-purchase').onclick=async()=>{
 };
 $('copy-invite').onclick=async()=>{try{await navigator.clipboard.writeText(store.household.invite_code);notice('Código copiado');}catch(e){notice('Selecciona el código y cópialo manualmente.');}};
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>$(b.dataset.close).close());
+function writeControls(){
+ const blocked=!phase3Ready;
+ for(const id of ['add-menu-btn','new-purchase-btn','new-receipt-btn','start-period-btn'])$(id).disabled=blocked;
+ let pending=false;try{pending=!!localStorage.getItem(budgetKey('period'));}catch{/* Writes still fail closed if an operation cannot be persisted. */}
+ $('retry-period-btn').classList.toggle('hidden',!pending);
+}
+function budgetKey(kind){return `casa_${kind}_${store.user?.id}_${store.household?.id}`;}
+function clearPermanent(error,key){if(['42501','40001','P0001','PGRST202'].includes(error.code)||/^(22|23)/.test(error.code||''))localStorage.removeItem(key);}
+function renderFunHistory(){
+ const query=analytics.normalize($('history-search').value),rows=analytics.periodRows(store.fun,selectedPeriod('history-month'),'spent_on').filter(r=>analytics.normalize(r.category+' '+r.description).includes(query));
+ $('purchase-count').textContent=rows.length+' gastos';$('fun-list').innerHTML=rows.slice(0,store.historyLimit).map(r=>`<button type="button" class="purchase-card" data-fun="${safe(r.id)}"><span class="purchase-text"><b>${safe(r.category)}</b><small>${safe(localLabel(r.spent_on))}${r.description?' · '+safe(r.description):''}</small></span><strong>${fmt(r.amount)}</strong></button>`).join('')||'<p class="empty">No hay gastos FUN en este período.</p>';$('history-more-btn').classList.toggle('hidden',rows.length<=store.historyLimit);
+}
+function renderFunData(){
+ const period=selectedPeriod('data-month'),rows=analytics.periodRows(store.fun,period,'spent_on'),spent=rows.reduce((n,r)=>n+analytics.cents(r.amount),0),limit=analytics.cents(period?.fun_budget||0);
+ $('fun-summary').textContent=`${fmt(spent/100)} · ${rows.length} gastos · ${limit>0?percentage(spent/limit*100)+' del presupuesto del período':'Sin presupuesto oficial'}`;
+ report('fun-categories',analytics.funCategories.map(c=>[c,rows.filter(r=>r.category===c).reduce((n,r)=>n+analytics.cents(r.amount),0)]),'');
+}
+let funEditing=null,funBusy=false,periodBusy=false,periodCandidate=null;
+function openFun(id=null){
+ if(!phase3Ready||!store.loaded){notice('Actualiza los períodos CASA 3.3 antes de guardar.');return;}
+ const pending=JSON.parse(localStorage.getItem(budgetKey('fun'))||'null');
+ const row=id?store.fun.find(r=>r.id===id):null;
+ if(id&&!row){notice('El gasto ya no está disponible.');return;}
+ if(pending&&id&&pending.p_expense_id!==id){notice('Hay otro gasto FUN pendiente. Pulsa + para reintentarlo.');return;}
+ funEditing=row;const value=pending?{amount:pending.p_amount,category:pending.p_category,spent_on:pending.p_date,description:pending.p_description}:row;
+ if(pending?.p_expense_id)funEditing=store.fun.find(r=>r.id===pending.p_expense_id)||{id:pending.p_expense_id,revision:pending.p_expected_revision};
+ $('fun-form').reset();$('fun-amount').value=value?.amount??'';$('fun-category').value=value?.category||'';$('fun-date').value=value?.spent_on||dateLocal();$('fun-description').value=value?.description||'';
+ $('fun-status').textContent=pending?'Operación pendiente: reintenta con los mismos datos.':'';$('fun-title').textContent=funEditing?'Editar gasto FUN':'Añadir gasto FUN';$('fun-save').textContent=pending?.p_delete?'Reintentar eliminación':pending?'Reintentar guardado':'Guardar gasto';$('fun-delete').classList.toggle('hidden',!funEditing||!!pending);dialog('fun-dialog');
+}
+async function saveFun(deleting=false){
+ if(funBusy)return;if(!phase3Ready||!store.loaded){$('fun-status').textContent='Actualiza los datos CASA 3.3 antes de guardar.';return;}
+ const key=budgetKey('fun'),sHome=store.household.id,sUser=store.user.id;let op=JSON.parse(localStorage.getItem(key)||'null');
+ if(!op?.p_delete&&!deleting&&!$('fun-form').reportValidity())return;
+ const amount=Number($('fun-amount').value),category=$('fun-category').value,date=$('fun-date').value,description=$('fun-description').value.trim();
+ if(!op&&(!analytics.funCategories.includes(category)||!Number.isFinite(amount)||amount<=0||amount>9999999999.99||Math.abs(amount*100-Math.round(amount*100))>0.00001||!/^\d{4}-\d{2}-\d{2}$/.test(date)||description.length>500)){notice('Revisa importe, categoría y fecha.');return;}
+ const params={p_household_id:sHome,p_expense_id:funEditing?.id||null,p_expected_revision:funEditing?.revision??null,p_amount:amount,p_category:category,p_date:date,p_description:description,p_delete:deleting};
+ if(op){const {p_operation_id,...old}=op;if(JSON.stringify({...params,p_expected_revision:old.p_expected_revision,p_delete:old.p_delete})!==JSON.stringify(old)){notice('Hay una operación pendiente. Conserva sus datos originales.');return;}}
+ else{if(deleting&&!confirm('¿Eliminar este gasto FUN?'))return;op={...params,p_operation_id:crypto.randomUUID()};try{localStorage.setItem(key,JSON.stringify(op));}catch{notice('No se pudo proteger el reintento. No se ha enviado el gasto.');return;}}
+ funBusy=true;for(const id of ['fun-save','fun-delete','fun-cancel'])$(id).disabled=true;
+ try{
+  const r=await store.client.rpc('casa_fun_write',op);if(r.error){clearPermanent(r.error,key);throw r.error;}
+  localStorage.removeItem(key);if(store.household?.id!==sHome||store.user?.id!==sUser)return;
+  if(r.data.deleted)store.fun=store.fun.filter(row=>row.id!==r.data.deleted);else if(!store.fun.some(row=>row.id===r.data.id&&row.revision>r.data.revision))store.fun=store.fun.filter(row=>row.id!==r.data.id).concat(r.data).sort((a,b)=>b.spent_on.localeCompare(a.spent_on)||b.id.localeCompare(a.id));
+  render();$('fun-dialog').close();await reloadAfterWrite(op.p_delete?'Gasto FUN eliminado':'Gasto FUN guardado');
+ }catch(error){if(store.household?.id===sHome&&store.user?.id===sUser){$('fun-status').textContent=phaseError(error)+(localStorage.getItem(key)?' Operación pendiente: reintenta, no registres otro gasto.':'');if(error.code==='40001')await refresh(true).catch(()=>{});}}
+ finally{funBusy=false;for(const id of ['fun-save','fun-delete','fun-cancel'])$(id).disabled=false;}
+}
+function preparePeriod(){
+ const pending=JSON.parse(localStorage.getItem(budgetKey('period'))||'null'),date=pending?.p_start||$('period-start').value;
+ if(!pending&&(!phase3Ready||!store.loaded))return;
+ if(!pending&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<=currentPeriod().starts_on||date>dateLocal())){notice('La fecha debe ser posterior al inicio y no futura.');return;}
+ $('period-status').textContent='';
+ periodCandidate=pending||{p_household_id:store.household.id,p_expected_period:currentPeriod().id,p_start:date,p_operation_id:crypto.randomUUID()};
+ $('period-confirm-text').textContent=`${localLabel(date)} · Compras ${fmt(600)} · FUN ${fmt(240)}`;dialog('period-dialog');
+}
+async function confirmPeriod(){
+ if(periodBusy||!periodCandidate||(!phase3Ready&&!localStorage.getItem(budgetKey('period'))))return;
+ const key=budgetKey('period'),op=periodCandidate,home=store.household.id,user=store.user.id;
+ try{localStorage.setItem(key,JSON.stringify(op));}catch{notice('No se pudo proteger el reintento. No se ha iniciado ningún período.');return;}
+ periodBusy=true;$('confirm-period').disabled=true;$('cancel-period').disabled=true;
+ try{
+  const r=await store.client.rpc('casa_start_period',op);if(r.error){clearPermanent(r.error,key);throw r.error;}
+  localStorage.removeItem(key);if(store.household?.id!==home||store.user?.id!==user)return;
+  store.periods=store.periods.map(p=>p.id===op.p_expected_period&&!p.ends_on?{...p,ends_on:op.p_start}:p).concat(store.periods.some(p=>p.id===r.data.id)?[]:[r.data]).sort((a,b)=>b.starts_on.localeCompare(a.starts_on));
+  $('history-month').dataset.manual='false';$('data-month').dataset.manual='false';updateFilters();render();$('period-dialog').close();$('period-status').textContent='Nuevo período confirmado.';$('period-start').value=dateLocal();delete $('period-start').dataset.manual;periodCandidate=null;
+  await reloadAfterWrite('Nuevo período iniciado');
+ }catch(error){if(store.household?.id===home&&store.user?.id===user){$('period-dialog').close();$('period-status').textContent=phaseError(error)+(localStorage.getItem(key)?' Recarga pendiente: reintenta la misma operación.':'');if(localStorage.getItem(key)){phase3Ready=false;writeControls();$('remaining').textContent='—';$('period-heading').textContent='Recarga pendiente de verificar';dataStatus('Resultado de recarga pendiente. Actualiza o reintenta la misma operación.');}if(error.code==='40001')await refresh(true).catch(()=>{});}}
+ finally{periodBusy=false;$('confirm-period').disabled=false;$('cancel-period').disabled=false;writeControls();}
+}
+document.querySelectorAll('[data-wallet]').forEach(button=>button.onclick=()=>{store.wallet=button.dataset.wallet;store.historyLimit=50;render();});
+$('fun-list').onclick=e=>{try{const b=e.target.closest('[data-fun]');if(b)openFun(b.dataset.fun);}catch(error){notice(phaseError(error));}};
+$('fun-form').onsubmit=e=>{e.preventDefault();saveFun().catch(error=>{$('fun-status').textContent=phaseError(error);});};$('fun-delete').onclick=()=>saveFun(true).catch(error=>{$('fun-status').textContent=phaseError(error);});
+$('fun-cancel').onclick=()=>{if(funBusy)return;if(localStorage.getItem(budgetKey('fun'))){notice('Reintenta la operación pendiente antes de cerrar.');return;}$('fun-dialog').close();};
+$('fun-dialog').oncancel=e=>{if(funBusy||localStorage.getItem(budgetKey('fun')))e.preventDefault();};
+$('period-start').oninput=()=>{$('period-start').dataset.manual='true';};
+const preparePeriodSafely=()=>{try{preparePeriod();}catch(error){$('period-status').textContent=phaseError(error);}};
+$('start-period-btn').onclick=preparePeriodSafely;$('retry-period-btn').onclick=preparePeriodSafely;$('confirm-period').onclick=()=>confirmPeriod().catch(error=>{$('period-status').textContent=phaseError(error);});
+$('cancel-period').onclick=()=>{if(periodBusy)return;if(localStorage.getItem(budgetKey('period'))){notice('La recarga está pendiente de verificar. Reintenta la misma operación.');return;}periodCandidate=null;$('period-dialog').close();};
+$('period-dialog').oncancel=e=>{if(periodBusy||localStorage.getItem(budgetKey('period')))e.preventDefault();};
+$('add-menu-btn').onclick=()=>{if(!phase3Ready||!store.loaded){notice('Actualiza CASA 3.3 antes de registrar gastos.');return;}try{if(store.wallet==='fun')openFun();else dialog('add-menu-dialog');}catch(error){notice(phaseError(error));}};
+
 if('serviceWorker' in navigator && (location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(console.warn);
 document.addEventListener?.('visibilitychange',()=>{if(!document.hidden)resumeCalendar();});
 window.addEventListener?.('pageshow',resumeCalendar);

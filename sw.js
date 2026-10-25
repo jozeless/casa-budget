@@ -1,4 +1,4 @@
-const CACHE = 'casa-shell-v14-inicio-002';
+const CACHE = 'casa-shell-v15-fun-periods';
 const SHELL = ['./','./index.html','./styles.css','./app.js','./budget.js','./config.js','./manifest.webmanifest','./icon.svg','./icon-192.png','./icon-512.png','./receipt.js','./supabase/functions/_shared/receipt-core.js'];
 const shellUrls = new Set(SHELL.map(path=>new URL(path,self.registration.scope).href));
 self.addEventListener('install', event => {
