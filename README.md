@@ -1,166 +1,71 @@
-# CASA · Compras compartidas (2.6)
+# CASA Budget — CASA 3.3
 
-Una app móvil de gastos del supermercado para dos personas, con Supabase (login + base de datos privada) y GitHub Pages. **Esta fase NO utiliza OpenAI ni cobra API.**
+PWA compartida para el hogar, con **Compras** y **FUN**, identidad oscura/morada y navegación Inicio / Historial / (+) / Data / Settings.
 
-## Interfaz de CASA 2.0
+**Esta versión requiere una migración e inicialización manual antes de publicar el cliente.** No hay instalación automática de SQL ni despliegue de la Edge Function. [Guía de instalación y revisión de CASA 3.3](docs/CASA-3.3-FUN-PERIODS.md).
 
-- **Inicio:** presupuesto, gasto y saldo del mes actual, recomendación para lo que queda de la semana y barra del porcentaje de presupuesto disponible.
-- **Historial:** filtro de mes o todos los meses, supermercado y búsqueda por supermercado o productos registrados. Detalles, edición atómica y eliminación con confirmación.
-- **Data:** Resumen, Tiendas y Productos comparten mes y año. Indicadores, gasto por tienda y producto, y evolución mensual/semanal real. Las compras sin productos detallados no se asignan a productos ni categorías inventadas.
-- **Settings:** nombre del hogar, presupuesto, invitación privada, cuenta, configuración pública de Supabase y cierre de sesión.
-- **Añadir (+):** compra manual desde cualquier vista. Subir recibo abre lectura privada con OpenAI y revisión humana, tras configuración manual de servidor.
+## Presupuestos por recarga
 
-La recomendación semanal divide el saldo positivo del mes entre los días restantes (incluido hoy) y lo multiplica por los días desde hoy hasta el domingo, recortados al final del mes. Usa días de calendario locales, semanas lunes-domingo e importes en céntimos. Un saldo negativo se muestra como tal y recomienda cero. No arrastra presupuesto ni gastos de otros meses.
+- Compras: **600 €**; FUN: **240 €**, ambos compartidos por los miembros del mismo hogar.
+- Cada período empieza en su fecha inclusiva y termina en la fecha exclusiva de la siguiente recarga. No sigue meses calendario, no tiene fecha final programada y no acumula saldos.
+- Para el hogar CASA existente, el primer inicio es **2026-10-19**. La migración no adivina su UUID ni lo inicializa automáticamente: el administrador debe identificar hogar/miembro e inicializarlo con la función restringida descrita en la guía.
+- Las compras anteriores permanecen intactas y se consultan en «Histórico anterior / pruebas», fuera de los saldos oficiales.
+- Un gasto se incluye por su fecha efectiva, aunque se guarde más tarde. No se agrega ni reasigna un `period_id` a transacciones antiguas.
+- Las fechas de negocio se interpretan en `Europe/Amsterdam`. No se inicia una recarga al cambiar de mes ni por un temporizador.
 
-Las vistas comparten una carga paginada de las compras y sus productos. Cambiar de pestaña o filtrar no hace consultas nuevas. Registrar o eliminar una compra actualiza los datos compartidos; **Actualizar** permite consultar cambios de otra persona. Un error de carga no se representa como gasto cero. La Fase 2 requiere una migración aditiva manual; conserva los datos y las políticas RLS existentes.
+Inicio 003 muestra selector Compras/FUN, fecha de inicio y una única tarjeta de saldo con barra de disponibilidad. Verde >50%, naranja >20% y hasta 50%, rojo hasta 20%; saldo negativo visible con barra vacía. No contiene la recomendación semanal ni tarjetas de gastado/presupuesto. Importes extensos se ajustan sin recorte horizontal y el contenido reserva espacio para la navegación/área segura.
 
-## Pruebas de desarrollo
+## Compras y recibos
 
-Ejecuta `node --test` desde la raíz para las pruebas de calendario, importes, filtros, paginación, autenticación, configuración y caché. Para comprobar cambios de hora locales: `TZ=Europe/Amsterdam node --test`.
+Se conservan registro manual, productos, edición, eliminación, advertencia de duplicados y operaciones idempotentes. La compra manual con líneas explícitas exige que su suma coincida con el total declarado.
 
-Con Playwright y Chromium disponibles en el entorno, ejecuta `node scripts/check-ui.cjs`. Puedes indicar la ruta de Chromium con `CHROMIUM_PATH`. La prueba sirve los archivos en un servidor local temporal y utiliza exclusivamente Supabase simulado, incluidos registros y eliminaciones; no toca las compras reales. Comprueba móvil, escritorio, compras vacías, muchas compras, saldo negativo y caché PWA. Las capturas con datos simulados se guardan en `/tmp/casa2-mobile.png` y `/tmp/casa2-desktop.png`.
+En recibos, **`purchases.total` es el importe pagado confirmado**. Las líneas/ajustes no tienen que sumar ese total; no se inventan ajustes. Por ejemplo, 28,98 € pagados y líneas de 31,57 € se guardan conservando ambos valores. Cambiar el total exige nueva confirmación. Las cantidades desconocidas y los campos inválidos siguen bloqueados; las propuestas se señalan para revisión.
 
-## Paso 1: Supabase
+La selección JPG/PNG/WebP/PDF compatible inicia el flujo habitual de extracción privada. Ninguna compra se guarda automáticamente. La revisión compacta, Opciones avanzadas, original privado, consultas de resultados almacenados y reintentos con el mismo UUID se conservan. No se ha cambiado el prompt, modelo, OCR ni Edge Function. [Configuración de recibos y límites existentes](docs/CASA-3.0-SETUP.md).
 
-1. Abre exclusivamente el proyecto CASA Budget en https://supabase.com/dashboard. No utilices KB WODS ni otro proyecto.
-2. Para una instalación nueva y vacía, ejecuta `schema.sql` una sola vez. En CASA Budget existente, no lo vuelvas a ejecutar: sigue [la migración de Fase 2](migrations/README.md).
-3. En **Authentication > Providers > Email** activa email/password. Puedes dejar la confirmación por email activada; si lo haces, comprueba tus correos.
-4. En **Project Settings > API** (o **Connect / API Keys**, según la interfaz), copia la **Project URL** y la clave pública **sb_publishable_...**. **No uses service_role, secret keys ni claves de OpenAI.**
+Los nuevos guardados normalizan Jumbo y Albert Heijn/AH únicamente en el campo supermercado, manteniendo otros nombres y las correcciones manuales. No modifican productos ni originales; las operaciones ya pendientes conservan su payload exacto.
 
-## Paso 2: conectar la app
+## FUN
 
-Edita `config.js` así:
+Registro manual de importe positivo (dos decimales), categoría, fecha y descripción opcional. Categorías exactas:
 
-```js
-window.CASA_CONFIG = {
-  supabaseUrl: 'https://TU-PROYECTO.supabase.co',
-  supabaseAnonKey: 'TU_CLAVE_PUBLICA'
-};
-```
+- `Benzine/Parkeren`
+- `entree/tickets`
+- `food`
+- `overig`
+- `hotel`
 
-Las claves públicas de Supabase están diseñadas para aparecer en el navegador **solo con Row Level Security configurado**. No publiques contraseñas ni secretos.
+El botón + en FUN abre directamente el formulario, sin recibos. Historial permite consultar, editar y eliminar gastos y seleccionar períodos anteriores. Data muestra resumen y las cinco categorías, con ceros reales cuando no hay gastos; no muestra Tiendas/Productos. Los datos se comparten por hogar y la edición controla revisiones concurrentes.
 
-También puedes dejar `config.js` sin rellenar: al abrir la app te pedirá ambos datos y los guardará en el navegador local de ese dispositivo. Para un despliegue compartido entre dos móviles, configúralos en el archivo.
+## Historial, Data y Settings
 
-## Paso 3: publicar en GitHub Pages
+Los selectores representan períodos de recarga. Compras mantiene búsqueda por producto/supermercado, filtros, detalle, informes de tiendas/productos, historial de producto completamente paginado y evolución por períodos o semanas dentro del período seleccionado. La evolución por períodos termina en el seleccionado.
 
-1. Crea un nuevo repositorio, por ejemplo `casa-compras`, y sube los archivos de esta carpeta a la raíz del repositorio.
-2. En **Settings > Pages**, selecciona **Deploy from a branch**, rama `main`, carpeta `/ (root)`.
-3. Abre la URL de Pages. Necesita HTTPS para instalarse cómodamente como app.
-4. Primera persona: crear cuenta > confirmar email si aplica > crear hogar > configurar presupuesto.
-5. En **Compartir hogar y configuración** copia el código de invitación y pásalo en privado a la segunda persona.
-6. Segunda persona: crear cuenta e iniciar sesión > **Unirme al hogar** > pegar código.
+Los porcentajes comparan el gasto con el presupuesto **almacenado en ese período**, no con `households.monthly_budget`. Los productos mantienen sus importes registrados; los descuentos generales no se reparten artificialmente y los productos no tienen por qué sumar el total pagado.
 
-## Qué funciona
+Settings muestra inicio actual y ambos presupuestos. «Iniciar nuevo período» propone la fecha local actual y pide confirmación de fecha/600 €/240 €. Acepta una fecha pasada posterior al inicio actual, nunca futura ni igual al inicio. Se retira Ajustar presupuesto: los presupuestos históricos son inmutables y las recargas nuevas son fijas.
 
-- Dos usuarios con emails independientes y un hogar compartido.
-- Presupuesto mensual fijo, saldo restante y barra de progreso.
-- Añadir compra con fecha, supermercado, total y líneas de productos opcionales.
-- Historial por mes, detalle y eliminación de compras.
-- Informes de gasto por supermercado y nombres de productos registrados.
-- Interfaz móvil y manifiesto PWA para instalar en pantalla de inicio.
-- RLS para que cuentas de otros hogares no vean los datos.
+No hay nuevas suscripciones realtime. Abrir CASA o pulsar Actualizar consulta compras, períodos, presupuestos y FUN; cambiar pantalla, selector o pestaña reutiliza los datos cargados. Tras guardar/eliminar/recargar se actualiza el estado y se consulta de nuevo. Un fallo de lectura posterior a una escritura confirmada se anuncia como actualización pendiente, sin fingir que falló la escritura. Una recarga cuyo resultado no se conoce conserva su UUID, muestra saldo sin verificar y permite reintentar la misma operación.
 
-## Limitaciones de esta primera versión
+## Seguridad e instalación
 
-- **No está conectado GPT.** Fotos de tickets, extracción automática, categorías inteligentes y chat se añadirán en una siguiente fase con Supabase Edge Functions, límites de consumo y clave de API solo en el servidor.
-- La suma del gasto por producto solo incluye compras con líneas detalladas. La identidad del producto solo normaliza espacios y mayúsculas; no combina marcas, tamaños ni acentos diferentes.
-- El presupuesto es el mismo para todos los meses, incluidos los pasados.
-- Crear/editar compras y productos se hace en una transacción con idempotencia y control de revisión. La Fase 2 utiliza una RPC transaccional; véase `migrations/README.md`.
-- El icono compartido es una casa de contorno morado: SVG en la cabecera y PNG 192/512 para la instalación PWA. Instalación y visualización pueden variar según navegador. Las estadísticas no se actualizan en vivo sin recargar; ambos usuarios ven el estado actual al abrir o cambiar de mes.
-- Por seguridad, el código de invitación debe compartirse solo con la pareja; cualquier usuario autenticado que posea ese código puede unirse.
-- El presupuesto y las compras se sincronizan en Supabase; la app web requiere conexión a internet para cargar los datos.
+Autenticación, confirmación de correo, recuperación de contraseña, hogares/invitaciones y configuración pública permanecen. `config.js` admite únicamente la URL y clave pública del proyecto CASA; nunca claves OpenAI, `service_role`, contraseñas o claves privadas. Settings conserva sustitución local/restauración de configuración.
 
-## Seguridad
+Las tablas nuevas tienen RLS por pertenencia al hogar. Sus escrituras pasan por RPC autenticadas y atómicas; no se conceden escrituras directas a clientes. Recargas serializadas por hogar, comprobación del período esperado, exclusión de intervalos solapados, índice de un único período abierto, revisiones FUN e idempotencia protegen operaciones repetidas/concurrentes. La inicialización de hogares existentes es exclusiva del administrador SQL; los hogares nuevos se inicializan al crearse.
 
-No pongas claves secretas en `config.js` ni en repositorios. RLS debe estar habilitado **antes** de introducir gastos personales. En Supabase comprueba que el usuario `anon` no puede leer registros y que cada usuario autenticado solo puede leer su hogar. Esta primera versión no guarda fotografías de recibos.
+Migración nueva: **`migrations/20261025_fun_periods.sql`**, después de Fase 2, CASA 3.0 y CASA 3.2. No cambia transacciones, operaciones anteriores, SQL/RLS existentes ni el despliegue de recibos. Requiere `btree_gist`, extensión soportada por Supabase/PostgreSQL, para la exclusión de solapamientos.
 
+La casa morada de `icon.svg` se comparte con cabecera/PWA; `npm run icons` regenera PNG 192/512 con Chromium. Manifest, `.nojekyll`, icono táctil iOS y scope `/casa-budget/` se conservan. Caché: **`casa-shell-v15-fun-periods`**, instalada como conjunto completo. Recargar/reabrir con conexión para adoptar el cliente nuevo, sin descartar revisiones/operaciones pendientes. No se altera la instalación de otras PWA.
 
-## Fase 2
+## Desarrollo y pruebas
 
-- Editar una compra desde su detalle; conserva su ID y autor. Las líneas detalladas deben sumar el total.
-- Pulsar un producto de Data para consultar su historial paginado completo; inicia con el mes de Data y ofrece **Todo**.
-- Posibles duplicados (supermercado, fecha, total) requieren Cancelar o Guardar igualmente. La comprobación es una advertencia, no una restricción de unicidad.
-- Una respuesta de conexión perdida mantiene la operación pendiente en este navegador, separada por usuario/hogar. Reintentar usa la misma UUID y datos; no se debe comenzar otra compra hasta resolverla. El servidor reconoce esa UUID aunque se reinicie la PWA. No borrar el almacenamiento del navegador durante un guardado pendiente.
-- La migración se aplica manualmente: instrucciones en [migrations/README.md](migrations/README.md). No se ejecuta al iniciar CASA.
+Node >=22, `npm ci`, Chromium y Playwright; Docker/PostgreSQL 17 para SQL aislado.
 
-Pruebas: `TZ=Europe/Amsterdam node --test`, `node scripts/check-ui.cjs` (Playwright + Chromium; Supabase simulado) y `node scripts/check-sql.cjs` (Docker + PostgreSQL 17 desechable; pruebas reales de SQL, sin Supabase remoto).
+- `npm test`: utilidades, fechas Amsterdam/DST, períodos, presupuestos históricos, total pagado, archivos/recibos, autenticación/recuperación y caché.
+- `npm run test:home`: Inicio 003, selector, FUN CRUD, períodos/histórico, recarga, fallos/reintentos, permisos de interfaz y gating de migración en 320/360/390/430 px, tablet y escritorio. Capturas `/tmp/casa-3-3-fun-<ancho>.png`.
+- `npm run test:ui`: lo anterior y regresiones de compras manuales, edición, duplicados, paginación de productos, recibos, guardados pendientes, autenticación e instalabilidad Chromium. Los casos mensuales/semanales de Inicio 002 se sustituyeron por casos de recarga; la cobertura de operaciones existentes se conserva.
+- `npm run test:sql`: aplica migraciones en PostgreSQL 17 desechable, comprueba integridad histórica al repetirlas, RLS, dos miembros, terceros, concurrencia de recargas, rollback de un fallo tras cerrar un período, idempotencia y operaciones existentes. Solo en esa base de pruebas se fija la fecha del servidor al 21 de noviembre de 2026 para comprobar recargas de noviembre.
 
+Las pruebas usan fixtures y servicios simulados. No leen ni modifican Supabase real ni consumen OpenAI. Las utilidades mensuales heredadas de `budget.js` se mantienen para compatibilidad/pruebas y no alimentan saldos o informes de la aplicación 3.3.
 
-## Framework 2.5
-
-Encabezado compacto con icono provisional, CASA y botón accesible de actualización. Para corregir una conexión que impida entrar, la pantalla de autenticación conserva un acceso auxiliar a configuración. El mensaje de actualización exitosa se anuncia a lectores de pantalla; los errores permanecen visibles. Inicio contiene solo saldo/presupuesto y recomendación semanal. Las compras se consultan en Historial, y el código privado de invitación solo se muestra en Settings.
-
-La barra representa presupuesto disponible: verde por encima del 60%, naranja por encima del 30% hasta el 60%, rojo del 0% al 30%. Se limita entre 0% y 100%; saldo negativo y presupuesto cero muestran barra vacía y estado rojo. El presupuesto cero incluye una explicación. La transición respeta movimiento reducido. No requiere cambios de base de datos.
-
-
-## CASA 3.0 — Data Intelligence
-
-- **Resumen:** gasto del mes, compras distintas, ticket promedio y presupuesto utilizado sin limitarlo al 100%. Sin compras, el ticket muestra «Sin compras»; con presupuesto cero, el porcentaje muestra «No aplicable». Los meses históricos se comparan expresamente con el presupuesto vigente, porque CASA no almacena presupuestos históricos.
-- **Evolución mensual:** seis meses consecutivos terminando en el mes elegido, con ceros cuando no hay compras. **Semanal:** semanas lunes–domingo que intersectan ese mes; solo se suma gasto perteneciente al mes elegido, incluso cuando una semana cruza meses o años. No utiliza la recomendación semanal de Inicio.
-- **Tiendas:** gasto y porcentaje del mes, orden descendente. Se agrupan solo espacios exteriores y mayúsculas, sin modificar nombres en Supabase. Al pulsar una tienda se muestran sus compras y acceso al detalle existente.
-- **Productos:** gasto registrado y número de compras distintas. Varias líneas del mismo producto en un recibo suman sus importes y cuentan una compra. La identidad conserva acentos, marcas y tamaños; la búsqueda puede ignorar acentos sin fusionar identidades. El historial existente permite consultar el mes seleccionado o Todo.
-- Los períodos incluyen meses vacíos entre el primer registro y el mes actual, al menos los seis recientes, y conservan el período elegido manualmente. Las listas muestran 50 entradas y permiten ampliar sin volver a consultar.
-- Las agregaciones se reutilizan mientras no cambien período, compras, líneas o presupuesto. Cambiar pestaña, buscar o seleccionar tienda no consulta Supabase. Actualizar preserva pestaña, búsqueda y período; el cambio de sesión limpia el análisis y los filtros. Los avisos de posible desactualización permanecen visibles.
-
-No requiere SQL ni cambios en RLS, configuración, autenticación o RPC de escritura. Las pruebas de navegador usan fixtures y bloquean las conexiones a Supabase. Las pruebas de SQL, si se ejecutan, utilizan PostgreSQL desechable y no el proyecto real.
-
-## CASA 3.0 — Recibos inteligentes
-
-JPEG/PNG/WebP o PDF seguro de una página → Storage privado → Edge Function → extracción estructurada → revisión editable → confirmación transaccional. Nunca se guarda automáticamente. Descuentos y ajustes se registran aparte; 81,83 − 34,95 = 46,88 €. Data conserva importes de productos, distingue ajustes atribuibles y explica promociones generales. Settings permite limpieza manual de imágenes sin borrar compras.
-
-**Activación necesaria:** [guía paso a paso Supabase/OpenAI/Android](docs/CASA-3.0-SETUP.md). Incluye respaldo y migración independiente; esta rama no ejecuta SQL ni despliega funciones. No requiere ni admite claves OpenAI en config.js. Si falta el servidor nuevo, las compras manuales existentes siguen disponibles.
-
-Pruebas: `node --test`, `node scripts/check-ui.cjs`, `node scripts/check-sql.cjs`. Node requiere `pdf-lib` para pruebas PDF; Playwright/Chromium para interfaz; Docker/PostgreSQL 17 para SQL aislado. Las pruebas usan mocks, claves sintéticas y bases desechables. No consumen OpenAI ni consultan Supabase real. Los nombres del fixture Jumbo son sintéticos; sus importes reproducen el caso solicitado. Validar el recibo original y Android real antes de activar.
-
-`node scripts/build-icons.cjs` regenera PNG 192/512 desde el SVG provisional existente. Manifest y caché v14 incluyen ambos PNG y los módulos de recibos; el shell se actualiza como conjunto completo.
-
-La revisión de recibos usa productos compactos desplegables. La extracción distingue unidades explícitas/propuestas/inciertas y ajustes contables de información ya incluida o posterior al total. El resultado antiguo sigue siendo legible; no hay migración SQL nueva. El botón **Volver a cargar módulo** recupera una carga fallida sin enviar imágenes. Consultar en la [guía de activación](docs/CASA-3.0-SETUP.md) el nuevo esquema de extracción, los límites pendientes y el pin del workflow de despliegue.
-
-## CASA 3.1 — Revisión de recibos simplificada
-
-- **Añadir recibo:** «Seleccionar y analizar recibo» o «Tomar una foto» inicia el análisis habitual al seleccionar el archivo. Se indica antes que se enviará a OpenAI; seleccionar no guarda una compra. Los formatos y límites anteriores siguen vigentes.
-- **Revisión:** supermercado, fecha escrita con mes y año, número de productos, total pagado y descuento aplicado. Los productos siguen compactos y desplegables mediante teclado o pulsación; las propuestas e incertidumbres conservan el aviso naranja «Revisar».
-- **Opciones avanzadas:** cerradas inicialmente cuando sus campos son válidos. Reúnen edición de supermercado/fecha/total, ajustes compactos, atribuciones, información secundaria y acceso al original. Los avisos obligatorios permanecen fuera; un botón abre y enfoca el campo pendiente. La validación nativa también abre los campos ocultos que necesitan corrección.
-- **Confirmación:** casilla «He revisado los productos y el total pagado», guardado y cancelación en un pie separado del área desplazable. Se reserva espacio para ese pie y el área segura; la altura se adapta al viewport visual. La casilla no sustituye la validación: los datos inválidos mantienen el guardado bloqueado. Desde CASA 3.2, una diferencia de sumas es solo informativa.
-- **Recuperación:** «Consultar estado / reintentar» conserva el flujo existente. Recuperar un resultado almacenado no vuelve a extraerlo. Los guardados pendientes conservan el identificador de operación y no crean otra compra al reintentar. Tras abrir de nuevo se limpia la selección de archivo para poder elegir el mismo recibo sin depender de un cambio de nombre.
-
-Caché del shell: `casa-shell-v14-inicio-002`, instalada como conjunto completo. El identificador de recuperación del módulo compartido sigue siendo `v10`, ya que su API no ha cambiado. El despliegue de la Edge Function, el modelo/prompt y la autenticación permanecen sin cambios. El contrato SQL de CASA 3.2 se describe a continuación.
-
-Pruebas de CASA 3.1: `npm test`, `npm run test:ui` y `npm run test:sql`. La interfaz comprueba PNG/JPG/WebP, PDF compatible y selección de cámara con archivos locales; el servidor, Storage y OpenAI se simulan. Incluye el fixture Jumbo (81,83 − 34,95 = 46,88 €, con 0,45 € informativos), recuperación sin extracción adicional, avisos avanzados, edición, idempotencia, errores, teclado, cuatro tamaños de escritorio/móvil y viewport reducido. SQL se prueba únicamente en PostgreSQL 17 desechable con identidades de prueba. No equivalen a una prueba en producción.
-
-Pendiente de validación manual: cámara física, teclado y áreas seguras en Android/iOS, lectores de pantalla reales y análisis de documentos reales. Las pruebas automatizadas no llaman a OpenAI ni a Supabase real. Para recibir el nuevo shell en una PWA instalada, abrir con conexión y volver a abrir/recargar; una pestaña ya abierta conserva su interfaz hasta recargarse.
-
-
-## CASA 3.2 — Total pagado independiente del desglose
-
-El total pagado impreso y confirmado por la persona es el valor definitivo de `purchases.total`. El presupuesto, Historial, Data → Resumen y Tiendas ya se basan en él. Un recibo de 28,98 € con líneas y ajustes por 31,57 € se guarda por 28,98 €, conservando las líneas originales y sin inventar un ajuste de 2,59 €.
-
-La revisión mantiene el formato compacto. «Guardar compra · €28,98» muestra el importe que se descontará; la confirmación humana es obligatoria también al editar. Cambiar el total desmarca la confirmación, incluso si luego se vuelve al importe anterior. Reabrir un guardado pendiente restaura su confirmación, UUID y payload originales para consultar/reintentar la misma operación. Totales ausentes/no positivos/inválidos, cantidades desconocidas y campos o ajustes inválidos siguen bloqueados; las cantidades propuestas conservan «Revisar» hasta su confirmación. La suma y diferencia diagnósticas quedan solo en Opciones avanzadas, sin alarma ni bloqueo por diferencias.
-
-Productos e historial muestran importes registrados de las líneas, que pueden preceder a descuentos generales y no sumar el gasto pagado. No se prorratean descuentos generales ni se recalculan precios. La extracción, el prompt, los importes informativos y los descuentos reales se conservan.
-
-**Migración manual necesaria:** [`migrations/20261012_paid_total.sql`](migrations/20261012_paid_total.sql). Consultar [aplicación segura y comprobaciones](docs/CASA-3.2-PAID-TOTAL.md). Reemplaza las dos RPC de guardado con las mismas firmas y permisos, conserva el contrato de igualdad de compras manuales y no cambia tablas, RLS ni datos históricos. No volver a ejecutar la migración antigua de CASA 3.0 después de esta: reemplazaría las funciones nuevas. Si el servidor todavía rechaza la igualdad, la interfaz indica que falta aplicar CASA 3.2 y conserva el recibo pendiente.
-
-Pruebas: `npm test`, `npm run test:ui`, `npm run test:sql`. Incluyen el nuevo ejemplo, Jumbo, confirmación al cambiar el total, reintentos, pantallas compartidas y PostgreSQL 17 aislado con migración repetida, datos históricos y permisos intactos. No llaman a Supabase/OpenAI reales. La caché es `casa-shell-v14-inicio-002`; una PWA abierta debe recargarse para recibir la interfaz instalada nueva sin perder revisiones pendientes.
-
-## Nombres uniformes de supermercados
-
-Los nuevos guardados y ediciones, tanto manuales como desde recibos, convierten nombres de cadena reconocibles en `Jumbo` o `Albert Heijn` (incluido `AH`). La comparación ignora mayúsculas y espacios para reconocer la cadena al principio del campo, también tras «Supermarkt» o «Supermercado», con una separación completa; no confunde `AHOY`, `Jumboree` ni tiendas desconocidas que mencionen esas palabras. Otros nombres conservan su escritura. El campo sigue siendo editable para corregir la tienda antes de guardar.
-
-La normalización solo recibe el supermercado, nunca los nombres de productos. No altera precios, cantidades, descuentos, presupuesto ni el JSON/archivo original del recibo. No requiere SQL, cambios de OpenAI ni reescritura del historial. Los duplicados se comparan reconociendo variantes antiguas, sin modificar esas filas. Las operaciones ya pendientes conservan su UUID y payload original, incluso si el nombre antiguo no es canónico.
-
-Caché activa: `casa-shell-v14-inicio-002`. Pruebas: `npm test` y `npm run test:ui`, con Supabase/OpenAI simulados, incluyendo ambas rutas, corrección manual, tiendas desconocidas, productos intactos, recuperación de operaciones anteriores y duplicados por variantes de cadena.
-
-
-## Inicio 002
-
-Inicio conserva sus datos y fórmulas: dos tarjetas iguales para saldo disponible/gastado, presupuesto mensual a ancho completo con barra de disponibilidad y saldo disponible de presupuesto, y recomendación hasta el domingo. Al terminar el mes antes del domingo, el período indica «hasta fin de mes»; se utiliza la misma fecha final y número de días calculados anteriormente. Se elimina «A TU RITMO» y la explicación anterior. El texto inferior muestra el saldo disponible, siguiendo la solicitud aunque la captura de referencia mostrase el gasto.
-
-Los importes usan el formato monetario existente y cálculos en céntimos. La tipografía de las tarjetas se adapta a su contenedor y longitud; los importes extremadamente largos pueden ocupar más de una línea, sin recorte ni scroll horizontal. Los estados de presupuesto cero/superado, colores por disponibilidad, atributos accesibles y movimiento reducido siguen vigentes. El área desplazable reserva espacio para la navegación y las áreas seguras.
-
-La cabecera usa `icon.svg`, también utilizado por el manifest; PNG 192/512 regenerados con `npm run icons`. La casa morada sobre azul oscuro reemplaza el icono verde anterior. La navegación mantiene sus acciones, estados activos y botón +, con iconos SVG sin depender de glifos variables entre dispositivos. Caché: `casa-shell-v14-inicio-002`.
-
-Validación: `npm test`, `npm run test:ui` y `npm run test:home`. La prueba específica cubre 320/360/390/430 px, tablet y escritorio, importes positivos/negativos largos, disponibilidad 100/60/30/0%, presupuesto cero/excedido, domingo/lunes, fin de mes, actualización de compras/presupuesto, navegación, reducción de movimiento e iconos pequeños. Supabase/Auth/OpenAI se simulan; no se consultan datos reales. Las capturas se generan en `/tmp/casa-inicio-002-<ancho>.png` con presupuesto 600,00 €, gasto 101,05 €, saldo 498,95 € y recomendación 157,56 € para el 13 de octubre de 2026.
-
-Pendiente de comprobación manual: áreas seguras en teléfonos físicos y actualización del icono de instalaciones existentes por Android/iOS. Los lanzadores pueden tardar en refrescar sus iconos; la caché de la web no garantiza un cambio inmediato del icono del sistema. No hay cambios de SQL, Supabase, extracción, autenticación o fórmulas.
+Pendiente antes de activar: revisión del SQL y respaldo restaurable, identificación explícita del hogar CASA, inicialización, verificación en Supabase y móviles físicos. **No hacer merge/despliegue hasta completar y aprobar esos pasos.**

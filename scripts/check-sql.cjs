@@ -21,6 +21,17 @@ const sql=file=>docker(['exec','-i',name,'psql','-U','postgres','-v','ON_ERROR_S
  }
  sql('tests/sql/paid-total.sql');
  console.log('CASA 3.2: migration twice preserves all historical rows/operations/grants; paid totals, manual equality, validation, rollback, household permissions and legacy UUID replay passed.');
+ const before33=(await snapshot()).stdout;
+ for(let i=0;i<2;i++){sql('migrations/20261025_fun_periods.sql');assert.equal((await snapshot()).stdout,before33,'CASA 3.3 must not change existing transactions/households/operations');}
+ sql('tests/sql/fun-periods.sql');
+ const active33=(await query("select id from public.budget_periods where household_id='10000000-0000-0000-0000-000000000001' and ends_on is null")).stdout.trim();
+ const recharge33=user=>"set role authenticated;set request.jwt.claim.sub='"+user+"';select public.casa_start_period(gen_random_uuid(),'10000000-0000-0000-0000-000000000001','"+active33+"','2026-11-21');";
+ const race33=await Promise.allSettled([query(recharge33('00000000-0000-0000-0000-000000000001')),query(recharge33('00000000-0000-0000-0000-000000000002'))]);assert.equal(race33.filter(r=>r.status==='fulfilled').length,1);assert.match(race33.find(r=>r.status==='rejected').reason.stderr,/40001/);
+ await query("select public.casa_initialize_periods('10000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000003','2026-10-19')");
+ const other33=(await query("select id from public.budget_periods where household_id='10000000-0000-0000-0000-000000000002' and ends_on is null")).stdout.trim();
+ const replay33="set role authenticated;set request.jwt.claim.sub='00000000-0000-0000-0000-000000000003';select public.casa_start_period('60000000-0000-0000-0000-000000000099','10000000-0000-0000-0000-000000000002','"+other33+"','2026-11-20');";
+ const replays33=await Promise.all([query(replay33),query(replay33)]);assert.equal(replays33[0].stdout,replays33[1].stdout);
+ console.log('CASA 3.3: migration twice preserves all legacy rows; FUN CRUD/RLS, immutable periods, injected rollback, concurrent members and same-UUID recharge replay passed.');
  const prefix="set role authenticated;set request.jwt.claim.sub='00000000-0000-0000-0000-000000000001';";
  const op='20000000-0000-0000-0000-000000000001',home='10000000-0000-0000-0000-000000000001';
  const call=prefix+`select public.casa_save_purchase('${op}','${home}',null,null,'Concurrent','2026-10-02',10,'[]');`;
